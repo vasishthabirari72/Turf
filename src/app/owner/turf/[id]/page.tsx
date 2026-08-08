@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
+import { sameName } from "@/lib/names";
 
 interface Slot {
   time: string;
@@ -12,6 +13,7 @@ interface Slot {
 interface Turf {
   id: number;
   name: string;
+  owner_name: string;
   locality: string;
   sport: string;
   price_per_hour: number;
@@ -49,6 +51,8 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   const [slots, setSlots] = useState<Slot[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(false);
+  // null while we read localStorage; "" means nobody is signed in.
+  const [ownerName, setOwnerName] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const { date } = dayLabel(dayOffset);
@@ -77,7 +81,15 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   }, [id, date]);
 
   useEffect(() => {
-    fetch(`/api/turfs/${id}`).then((r) => r.json()).then(setTurf);
+    const saved = localStorage.getItem("owner_name") || "";
+    // Both land together, so there's no render where the turf is known but the
+    // signed-in owner isn't (which would briefly fail the ownership check).
+    fetch(`/api/turfs/${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setTurf(data);
+        setOwnerName(saved);
+      });
   }, [id]);
 
   useEffect(() => {
@@ -91,14 +103,22 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
     const res = await fetch("/api/slots/toggle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ turf_id: id, date, start_time: slot.time, action, note: "Phone / walk-in booking" }),
+      body: JSON.stringify({
+        turf_id: id,
+        date,
+        start_time: slot.time,
+        action,
+        note: "Phone / walk-in booking",
+        acting_as: ownerName ?? "",
+      }),
     });
     if (res.ok) loadSlots();
     setBusy(null);
   }
 
-  // Mirrors the loaded layout (header, quick action, day tabs, legend, grid).
-  if (!turf) {
+  // Waits on ownerName too, so another owner's calendar never flashes up before
+  // the check below runs.
+  if (!turf || ownerName === null) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8" aria-busy="true" aria-label="Loading turf">
         <div className="skeleton h-4 w-28" />
@@ -116,6 +136,31 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         <div className="skeleton h-40 w-full rounded-xl mb-5" />
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
           {Array.from({ length: 12 }, (_, i) => <div key={i} className="skeleton h-19" />)}
+        </div>
+      </div>
+    );
+  }
+
+  // The API enforces this too; this just avoids showing someone a calendar whose
+  // controls would all be rejected.
+  if (!sameName(turf.owner_name, ownerName)) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        <div className="text-center py-16 rounded-xl border-2 border-dashed" style={{ borderColor: "var(--line)" }}>
+          <div className="text-3xl mb-2">🔒</div>
+          <div className="font-medium text-base">This turf belongs to someone else</div>
+          <div className="text-base mt-1" style={{ color: "var(--ink-soft)" }}>
+            {ownerName
+              ? `You are signed in as ${ownerName}. Only ${turf.owner_name} can manage this calendar.`
+              : "Sign in as the owner of this turf to manage its calendar."}
+          </div>
+          <Link
+            href="/owner"
+            className="tap-target inline-flex items-center mt-5 px-5 py-3 rounded-lg text-base font-semibold text-white"
+            style={{ background: "var(--pitch)" }}
+          >
+            Go to my turfs
+          </Link>
         </div>
       </div>
     );
