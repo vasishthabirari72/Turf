@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
   FOREIGN KEY (turf_id) REFERENCES turfs(id)
 );
 
+-- Saved details so returning people don't retype their name and number.
+-- This is NOT authentication: there is no password, session or identity check
+-- anywhere in this app, and a phone number here is simply stored as typed.
+-- Identity stays name-based, exactly as it is everywhere else.
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  phone TEXT,
+  role TEXT, -- 'player' | 'owner' | 'both', just informational
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS player_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   creator_name TEXT NOT NULL,

@@ -1,0 +1,198 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+
+const ROLES = [
+  { key: "player", label: "I play" },
+  { key: "owner", label: "I own a turf" },
+  { key: "both", label: "Both" },
+];
+
+export default function Profile() {
+  // Same localStorage key the rest of the app uses to identify someone.
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState("player");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("player_name") || "";
+    // Someone with no saved name skips the request but still resolves through a
+    // promise, so every state update below happens asynchronously.
+    const load: Promise<{ phone?: string; role?: string } | null> = stored
+      ? fetch(`/api/users?name=${encodeURIComponent(stored)}`)
+          .then((r) => r.json())
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    load.then((user) => {
+      setName(stored);
+      if (user) {
+        setPhone(user.phone || "");
+        if (user.role) setRole(user.role);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), phone: phone.trim(), role }),
+    });
+    const data = await res.json();
+    setSaving(false);
+
+    if (!res.ok) {
+      setError(data.error || "Could not save your details.");
+      return;
+    }
+    // Keep the shared key in step so booking and find-players see the same name.
+    localStorage.setItem("player_name", name.trim());
+    setSaved(true);
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-md mx-auto px-4 sm:px-6 py-8" aria-busy="true" aria-label="Loading your details">
+        <div className="skeleton h-8 w-40" />
+        <div className="skeleton h-4 w-64 mt-3" />
+        <div className="skeleton h-14 w-full mt-8" />
+        <div className="skeleton h-14 w-full mt-4" />
+        <div className="skeleton h-12 w-32 mt-6" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-md mx-auto px-4 sm:px-6 py-8">
+      <h1 className="font-display text-2xl sm:text-3xl font-bold" style={{ color: "var(--pitch)" }}>
+        Your profile
+      </h1>
+      <p className="text-base mt-1 mb-6" style={{ color: "var(--ink-soft)" }}>
+        Saved so you don&apos;t have to type it again every time you book.
+      </p>
+
+      <form onSubmit={handleSave} className="bg-white rounded-xl border p-5 flex flex-col gap-4" style={{ borderColor: "var(--line)" }}>
+        <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Your details</div>
+
+        <div>
+          <label className="text-base font-semibold block mb-1.5" htmlFor="profile-name">Name</label>
+          <input
+            id="profile-name"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setSaved(false); }}
+            placeholder="e.g. Ramesh Patil"
+            disabled={saving}
+            className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+            style={{ borderColor: "var(--line)" }}
+          />
+          <div className="text-sm mt-1.5" style={{ color: "var(--ink-soft)" }}>
+            This is the name shown on your bookings and game requests.
+          </div>
+        </div>
+
+        <div>
+          <label className="text-base font-semibold block mb-1.5" htmlFor="profile-phone">Phone number</label>
+          <input
+            id="profile-phone"
+            value={phone}
+            onChange={(e) => { setPhone(e.target.value); setSaved(false); }}
+            placeholder="e.g. 98765 43210"
+            inputMode="tel"
+            autoComplete="tel"
+            disabled={saving}
+            className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+            style={{ borderColor: "var(--line)" }}
+          />
+          <div className="text-sm mt-1.5" style={{ color: "var(--ink-soft)" }}>
+            Optional. Nobody checks this number — it is only saved here so a turf
+            owner can reach you about a booking.
+          </div>
+        </div>
+
+        <div>
+          <div className="text-base font-semibold mb-1.5">You are</div>
+          <div className="flex gap-2 flex-wrap">
+            {ROLES.map((r) => {
+              const active = role === r.key;
+              return (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => { setRole(r.key); setSaved(false); }}
+                  aria-pressed={active}
+                  disabled={saving}
+                  className="tap-target px-4 py-2.5 rounded-lg text-base font-medium border disabled:opacity-60"
+                  style={
+                    active
+                      ? { background: "var(--pitch)", borderColor: "var(--pitch)", color: "white" }
+                      : { background: "var(--paper)", borderColor: "var(--line)", color: "var(--ink)" }
+                  }
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="rounded-lg px-3 py-2.5 text-base font-medium"
+            style={{ background: "var(--booked-bg)", border: "1px solid var(--danger)", color: "var(--danger)" }}
+          >
+            {error}
+          </div>
+        )}
+
+        {saved && (
+          <div
+            role="status"
+            className="rounded-lg px-3 py-2.5 text-base font-medium"
+            style={{ background: "#EAF6EB", border: "1px solid var(--turf)", color: "var(--turf-dark)" }}
+          >
+            Saved. Your details will be filled in next time.
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={saving}
+          className="tap-target self-start px-5 py-3 rounded-lg text-base font-semibold text-white disabled:opacity-60"
+          style={{ background: "var(--turf)" }}
+        >
+          {saving ? "Saving…" : "Save details"}
+        </button>
+      </form>
+
+      <div className="mt-5 rounded-lg p-4 text-base leading-relaxed" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
+        There is no password and no sign-up here. Your name is how the app knows
+        you, so changing it above means new bookings use the new name — anything
+        booked earlier stays under the old one.{" "}
+        <Link href="/search" className="underline font-medium" style={{ color: "var(--turf-dark)" }}>
+          Find a turf
+        </Link>{" "}
+        or{" "}
+        <Link href="/players" className="underline font-medium" style={{ color: "var(--turf-dark)" }}>
+          find players
+        </Link>.
+      </div>
+    </div>
+  );
+}

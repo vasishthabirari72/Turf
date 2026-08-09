@@ -22,39 +22,51 @@ export default function RootLayout({
           <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             <Link
               href="/"
-              className="font-display text-base sm:text-xl font-bold flex items-center gap-1.5 sm:gap-2 min-w-0 truncate"
+              className="font-display text-base md:text-xl font-bold flex items-center gap-1.5 md:gap-2 min-w-0 truncate"
               style={{ color: "var(--pitch)" }}
             >
               <span
-                className="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-md text-sm shrink-0"
+                className="inline-flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded-md text-sm shrink-0"
                 style={{ background: "var(--turf)", color: "white" }}
               >
                 🏟
               </span>
-              {/* On narrow phones the wordmark would eat the room the nav needs (and
-                  truncate mid-word to "Maidaan C", which reads as a glitch). 374px is
-                  the cutoff: 360px Androids get the short mark, 375px iPhones keep the
-                  full one. */}
-              Maidaan<span className="max-[374px]:hidden" style={{ color: "var(--turf-dark)" }}>Connect</span>
+              {/* The wordmark competes with the nav for a fixed bar, and four nav
+                  items leave little room. Below 360px only the icon shows, phones
+                  get "Maidaan", and the full "MaidaanConnect" returns at md — where
+                  the nav also switches to its full labels. */}
+              <span className="max-[359px]:hidden truncate">
+                Maidaan<span className="hidden md:inline" style={{ color: "var(--turf-dark)" }}>Connect</span>
+              </span>
             </Link>
-            {/* Labels shorten below sm so the whole bar fits a 375px phone without
+            {/* Labels shorten below md so the whole bar fits a phone without
                 wrapping or scrolling sideways. */}
-            <nav className="flex items-center gap-0.5 sm:gap-1 text-sm font-medium shrink-0">
-              <Link href="/search" className="px-1.5 sm:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap">
-                <span className="sm:hidden">Turfs</span>
-                <span className="hidden sm:inline">Find a Turf</span>
+            <nav className="flex items-center gap-0.5 md:gap-1 text-sm font-medium shrink-0">
+              <Link href="/search" className="px-1.5 md:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap">
+                <span className="md:hidden">Turfs</span>
+                <span className="hidden md:inline">Find a Turf</span>
               </Link>
-              <Link href="/players" className="px-1.5 sm:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap">
-                <span className="sm:hidden">Players</span>
-                <span className="hidden sm:inline">Find Players</span>
+              <Link href="/players" className="px-1.5 md:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap">
+                <span className="md:hidden">Players</span>
+                <span className="hidden md:inline">Find Players</span>
+              </Link>
+              {/* Icon-only below md: a fourth text label does not fit a 375px bar,
+                  and the aria-label keeps it announced properly either way. */}
+              <Link
+                href="/profile"
+                aria-label="Your profile"
+                className="px-1.5 md:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap"
+              >
+                <span className="md:hidden text-base leading-none" aria-hidden="true">👤</span>
+                <span className="hidden md:inline">Profile</span>
               </Link>
               <Link
                 href="/owner"
-                className="ml-0.5 sm:ml-2 px-2 sm:px-4 py-2 rounded-md tap-target flex items-center font-semibold whitespace-nowrap"
+                className="ml-0.5 md:ml-2 px-2 md:px-4 py-2 rounded-md tap-target flex items-center font-semibold whitespace-nowrap"
                 style={{ background: "var(--pitch)", color: "white" }}
               >
-                <span className="sm:hidden">Owner</span>
-                <span className="hidden sm:inline">Owner Dashboard</span>
+                <span className="md:hidden">Owner</span>
+                <span className="hidden md:inline">Owner Dashboard</span>
               </Link>
             </nav>
           </div>
