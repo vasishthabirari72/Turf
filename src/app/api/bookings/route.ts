@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db, { isUniqueConstraintError } from '@/lib/db';
+import { priceForSlot, type PricingRule } from '@/lib/pricing';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
 
@@ -49,14 +50,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: SLOT_TAKEN }, { status: 409 });
   }
 
+  const turf = db.prepare('SELECT price_per_hour FROM turfs WHERE id = ?').get(turf_id) as
+    | { price_per_hour: number }
+    | undefined;
+  if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+
+  // Resolve the price server-side from the pricing rules rather than trusting
+  // anything the client sends, and store it, so a later rule change never
+  // rewrites what this booking cost.
+  const rules = db
+    .prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ?')
+    .all(turf_id) as unknown as PricingRule[];
+  const price = priceForSlot(start_time, rules, turf.price_per_hour);
+
   const stmt = db.prepare(
-    `INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name, payment_method)
-     VALUES (?, ?, ?, 'app_booking', ?, ?)`
+    `INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name, payment_method, price)
+     VALUES (?, ?, ?, 'app_booking', ?, ?, ?)`
   );
 
   let result;
   try {
-    result = stmt.run(turf_id, date, start_time, customer_name, method);
+    result = stmt.run(turf_id, date, start_time, customer_name, method, price);
   } catch (err) {
     // Another request won the race between our SELECT and this INSERT.
     if (isUniqueConstraintError(err)) {
@@ -64,8 +78,6 @@ export async function POST(req: NextRequest) {
     }
     throw err;
   }
-
-  const turf = db.prepare('SELECT * FROM turfs WHERE id = ?').get(turf_id) as { price_per_hour: number };
 
   return NextResponse.json(
     {
@@ -77,7 +89,7 @@ export async function POST(req: NextRequest) {
         start_time,
         customer_name,
         payment_method: method,
-        price: turf.price_per_hour,
+        price,
       },
     },
     { status: 201 }

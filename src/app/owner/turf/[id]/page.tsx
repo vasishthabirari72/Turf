@@ -11,6 +11,15 @@ interface Slot {
   customer_name: string | null;
   // 'card' | 'upi' | 'cod', or null for manual blocks and older bookings.
   payment_method: string | null;
+  price: number;
+}
+
+interface PricingRule {
+  id: number;
+  turf_id: number;
+  start_time: string;
+  end_time: string;
+  price: number;
 }
 
 const CASH = "💵";
@@ -61,6 +70,9 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   // null while we read localStorage; "" means nobody is signed in.
   const [ownerName, setOwnerName] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const [rules, setRules] = useState<PricingRule[]>([]);
+  const [ruleBusy, setRuleBusy] = useState(false);
+  const [ruleError, setRuleError] = useState<string | null>(null);
 
   const { date } = dayLabel(dayOffset);
 
@@ -102,6 +114,63 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   useEffect(() => {
     loadSlots();
   }, [loadSlots]);
+
+  const loadRules = useCallback(() => {
+    fetch(`/api/pricing?turf_id=${id}`)
+      .then((r) => r.json())
+      .then((data) => setRules(Array.isArray(data) ? data : []));
+  }, [id]);
+
+  useEffect(() => {
+    loadRules();
+  }, [loadRules]);
+
+  async function addRule(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    // Captured before the await — currentTarget is not reliable afterwards.
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
+    setRuleBusy(true);
+    setRuleError(null);
+    const res = await fetch("/api/pricing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        turf_id: Number(id),
+        start_time: form.get("start_time"),
+        end_time: form.get("end_time"),
+        price: Number(form.get("price")),
+        acting_as: ownerName ?? "",
+      }),
+    });
+    const data = await res.json();
+    setRuleBusy(false);
+    if (!res.ok) {
+      setRuleError(data.error || "Could not save that price.");
+      return;
+    }
+    formEl.reset();
+    loadRules();
+    loadSlots(); // the grid prices change immediately
+  }
+
+  async function deleteRule(ruleId: number) {
+    setRuleBusy(true);
+    setRuleError(null);
+    const res = await fetch(`/api/pricing/${ruleId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acting_as: ownerName ?? "" }),
+    });
+    setRuleBusy(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setRuleError(data.error || "Could not remove that price.");
+      return;
+    }
+    loadRules();
+    loadSlots();
+  }
 
   async function toggleSlot(slot: Slot) {
     if (slot.status === "app_booking") return; // can't manually toggle real bookings here
@@ -149,6 +218,9 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   }
 
   const cashSlots = slots.filter((s) => s.status === "app_booking" && s.payment_method === "cod");
+  // Summed from each booking's own price, not count x flat rate — peak slots
+  // cost more, and the owner is collecting the real amounts.
+  const cashTotal = cashSlots.reduce((sum, s) => sum + s.price, 0);
 
   // The API enforces this too; this just avoids showing someone a calendar whose
   // controls would all be rejected.
@@ -254,7 +326,7 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
           style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}
         >
           <strong>
-            {CASH} ₹{cashSlots.length * turf.price_per_hour} to collect on this day
+            {CASH} ₹{cashTotal} to collect on this day
           </strong>{" "}
           — {cashSlots.length} booking{cashSlots.length > 1 ? "s" : ""} paying cash at the turf
           {" "}({cashSlots.map((s) => s.time).join(", ")}).
@@ -308,6 +380,89 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
       <div className="mt-6 rounded-lg p-4 text-base leading-relaxed" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
         <strong style={{ color: "var(--ink)" }}>Booking by phone?</strong> Tap that time to block it, so nobody
         books it on the app. Tap it again to open it back up.
+      </div>
+
+      {/* Pricing sits below the grid on purpose: it's set once in a while, while
+          blocking a slot happens mid-phone-call and must stay at the top. */}
+      <div className="mt-6 rounded-xl p-4 sm:p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Charge more at busy times</div>
+        <div className="text-base mt-1 mb-4" style={{ color: "var(--ink-soft)" }}>
+          Every hour costs ₹{turf.price_per_hour} unless you set a different price below.
+        </div>
+
+        {rules.length > 0 && (
+          <div className="flex flex-col gap-2 mb-4">
+            {rules.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
+                style={{ background: "var(--manual-bg)" }}
+              >
+                <span className="text-base font-medium">
+                  {r.start_time} – {r.end_time} · <strong>₹{r.price}</strong>/hr
+                </span>
+                <button
+                  type="button"
+                  onClick={() => deleteRule(r.id)}
+                  disabled={ruleBusy}
+                  aria-label={`Remove the ₹${r.price} price for ${r.start_time} to ${r.end_time}`}
+                  className="tap-target px-3 py-1.5 rounded-lg text-sm font-semibold border whitespace-nowrap disabled:opacity-60"
+                  style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "var(--paper)" }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={addRule} className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+          <div>
+            <label className="text-sm font-semibold block mb-1.5" htmlFor="rule-start">From</label>
+            <input
+              id="rule-start" name="start_time" type="time" required defaultValue="18:00"
+              disabled={ruleBusy}
+              className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+              style={{ borderColor: "var(--line)" }}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5" htmlFor="rule-end">To</label>
+            <input
+              id="rule-end" name="end_time" type="time" required defaultValue="22:00"
+              disabled={ruleBusy}
+              className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+              style={{ borderColor: "var(--line)" }}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5" htmlFor="rule-price">Price (₹)</label>
+            <input
+              id="rule-price" name="price" type="number" required min={1} step={1} defaultValue={turf.price_per_hour + 200}
+              disabled={ruleBusy}
+              className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+              style={{ borderColor: "var(--line)" }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={ruleBusy}
+            className="tap-target px-5 py-3 rounded-lg text-base font-semibold text-white disabled:opacity-60"
+            style={{ background: "var(--pitch)" }}
+          >
+            {ruleBusy ? "Saving…" : "Set price"}
+          </button>
+        </form>
+
+        {ruleError && (
+          <div
+            role="alert"
+            className="mt-3 rounded-lg px-3 py-2.5 text-base font-medium"
+            style={{ background: "var(--booked-bg)", border: "1px solid var(--danger)", color: "var(--danger)" }}
+          >
+            {ruleError}
+          </div>
+        )}
       </div>
     </div>
   );

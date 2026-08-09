@@ -42,6 +42,18 @@ CREATE TABLE IF NOT EXISTS slot_overrides (
 -- this index closes it by rejecting the second writer outright.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_slot ON slot_overrides(turf_id, date, start_time);
 
+-- Peak/off-peak pricing. A rule covers slots where start_time <= slot < end_time.
+-- Hours not covered by any rule fall back to turfs.price_per_hour, so adding
+-- rules is additive and a turf with none behaves exactly as before.
+CREATE TABLE IF NOT EXISTS pricing_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  turf_id INTEGER NOT NULL,
+  start_time TEXT NOT NULL,  -- e.g. '18:00'
+  end_time TEXT NOT NULL,    -- e.g. '22:00'
+  price INTEGER NOT NULL,
+  FOREIGN KEY (turf_id) REFERENCES turfs(id)
+);
+
 CREATE TABLE IF NOT EXISTS player_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   creator_name TEXT NOT NULL,
@@ -69,6 +81,13 @@ if (!playerRequestColumns.some((c) => c.name === 'pending_joiners')) {
 const slotOverrideColumns = db.prepare('PRAGMA table_info(slot_overrides)').all() as { name: string }[];
 if (!slotOverrideColumns.some((c) => c.name === 'payment_method')) {
   db.exec(`ALTER TABLE slot_overrides ADD COLUMN payment_method TEXT`);
+}
+
+// The price a booking was actually made at. Stored so that changing a pricing
+// rule later never rewrites what an existing booking cost. NULL for manual
+// blocks and for bookings made before this column existed.
+if (!slotOverrideColumns.some((c) => c.name === 'price')) {
+  db.exec(`ALTER TABLE slot_overrides ADD COLUMN price INTEGER`);
 }
 
 // And photo_url — turfs listed before photos existed keep their emoji.

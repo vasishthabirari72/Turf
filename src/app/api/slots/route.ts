@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { priceForSlot, type PricingRule } from '@/lib/pricing';
 
 interface Turf {
   id: number;
   open_time: string;
   close_time: string;
+  price_per_hour: number;
 }
 
 interface Override {
@@ -13,6 +15,7 @@ interface Override {
   note: string | null;
   customer_name: string | null;
   payment_method: string | null;
+  price: number | null;
 }
 
 function timeToMinutes(t: string) {
@@ -41,10 +44,16 @@ export async function GET(req: NextRequest) {
   if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
 
   const overrides = db
-    .prepare('SELECT start_time, status, note, customer_name, payment_method FROM slot_overrides WHERE turf_id = ? AND date = ?')
+    .prepare('SELECT start_time, status, note, customer_name, payment_method, price FROM slot_overrides WHERE turf_id = ? AND date = ?')
     .all(turfId, date) as unknown as Override[];
 
   const overrideMap = new Map(overrides.map((o) => [o.start_time, o]));
+
+  // Peak/off-peak rules for this turf; hours they don't cover use the turf's
+  // flat price_per_hour.
+  const rules = db
+    .prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ?')
+    .all(turfId) as unknown as PricingRule[];
 
   const slots = [];
   const start = timeToMinutes(turf.open_time);
@@ -59,6 +68,9 @@ export async function GET(req: NextRequest) {
       note: override?.note || null,
       customer_name: override?.customer_name || null,
       payment_method: override?.payment_method || null,
+      // What this hour costs now. A booked slot keeps the price it was made at,
+      // so a later rule change never rewrites an existing booking.
+      price: override?.price ?? priceForSlot(time, rules, turf.price_per_hour),
     });
   }
 

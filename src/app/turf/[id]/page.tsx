@@ -6,6 +6,7 @@ import Link from "next/link";
 interface Slot {
   time: string;
   status: "open" | "app_booking" | "manual_block";
+  price: number;
 }
 interface Turf {
   id: number;
@@ -170,6 +171,13 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
     }
   }
 
+  // Every price shown on this page comes from the slot itself, so peak hours
+  // read the same in the grid, the booking bar and the payment sheet.
+  const selectedPrice = slots.find((s) => s.time === selected)?.price ?? turf?.price_per_hour ?? 0;
+  const slotPrices = slots.map((s) => s.price);
+  const minPrice = slotPrices.length ? Math.min(...slotPrices) : turf?.price_per_hour ?? 0;
+  const pricesVary = slotPrices.length > 0 && Math.max(...slotPrices) !== minPrice;
+
   // Skeleton mirrors the loaded layout (header, day tabs, slot grid) so the page
   // settles into place instead of flashing bare text.
   if (!turf) {
@@ -217,7 +225,11 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
             <div className="text-sm" style={{ color: "var(--ink-soft)" }}>{turf.locality} · {turf.sport} · ★ {turf.rating.toFixed(1)}</div>
           </div>
         </div>
-        <div className="font-display text-xl font-bold" style={{ color: "var(--turf-dark)" }}>₹{turf.price_per_hour}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>/hr</span></div>
+        <div className="font-display text-xl font-bold" style={{ color: "var(--turf-dark)" }}>
+          {pricesVary && <span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>from </span>}
+          ₹{pricesVary ? minPrice : turf.price_per_hour}
+          <span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>/hr</span>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
@@ -272,7 +284,8 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
               }
             >
               <div className="font-semibold text-sm">{slot.time}</div>
-              <div className="text-[11px] mt-0.5 opacity-85">{unavailable ? "Booked" : isSelected ? "Selected" : "Available"}</div>
+              <div className="text-sm font-bold leading-tight">₹{slot.price}</div>
+              <div className="text-[11px] leading-tight opacity-85">{unavailable ? "Booked" : isSelected ? "Selected" : "Available"}</div>
             </button>
           );
         })}
@@ -281,7 +294,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
       {selected && (
         <div className="bg-white rounded-xl border p-5 sticky bottom-4" style={{ borderColor: "var(--line)" }}>
           <div className="text-sm font-medium mb-2">
-            Booking <strong>{turf.name}</strong> on {date} at <strong>{selected}</strong> — ₹{turf.price_per_hour}
+            Booking <strong>{turf.name}</strong> on {date} at <strong>{selected}</strong> — ₹{selectedPrice}
           </div>
           <div className="flex gap-2 flex-wrap">
             <input
@@ -338,7 +351,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
                 <span className="text-sm" style={{ color: "var(--ink-soft)" }}>
                   {method === "cod" ? "Amount due at the turf" : "Amount to pay"}
                 </span>
-                <span className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>₹{turf.price_per_hour}</span>
+                <span className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>₹{selectedPrice}</span>
               </div>
               <div className="mt-2 pt-2 text-sm leading-relaxed" style={{ borderTop: "1px solid var(--line)", color: "var(--ink-soft)" }}>
                 <div style={{ color: "var(--ink)" }}>{turf.name}</div>
@@ -444,7 +457,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
 
             {method === "cod" && (
               <div className="mb-5 rounded-lg p-4 text-base leading-relaxed" style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}>
-                <strong>Pay ₹{turf.price_per_hour} in cash at the turf.</strong> Your slot is
+                <strong>Pay ₹{selectedPrice} in cash at the turf.</strong> Your slot is
                 held now — nothing to pay online. Please reach 10 minutes early.
               </div>
             )}
@@ -476,7 +489,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
               ) : method === "cod" ? (
                 "Confirm booking"
               ) : (
-                `Pay ₹${turf.price_per_hour}`
+                `Pay ₹${selectedPrice}`
               )}
             </button>
 
