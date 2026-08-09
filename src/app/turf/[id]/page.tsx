@@ -15,6 +15,7 @@ interface Turf {
   sport: string;
   price_per_hour: number;
   photo_emoji: string;
+  photo_url: string | null;
   rating: number;
 }
 
@@ -196,9 +197,21 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <Link href="/search" className="text-sm font-medium" style={{ color: "var(--turf-dark)" }}>← Back to search</Link>
 
+      {/* Hero photo when the owner uploaded one. Without it the emoji beside the
+          name carries the visual weight, exactly as before. */}
+      {turf.photo_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={turf.photo_url}
+          alt={turf.name}
+          className="w-full h-48 sm:h-64 rounded-xl object-cover mt-3"
+          style={{ border: "1px solid var(--line)" }}
+        />
+      )}
+
       <div className="flex items-start justify-between mt-3 mb-6 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <div className="text-3xl">{turf.photo_emoji}</div>
+          {!turf.photo_url && <div className="text-3xl">{turf.photo_emoji}</div>}
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>{turf.name}</h1>
             <div className="text-sm" style={{ color: "var(--ink-soft)" }}>{turf.locality} · {turf.sport} · ★ {turf.rating.toFixed(1)}</div>

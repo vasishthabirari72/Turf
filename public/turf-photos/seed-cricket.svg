@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="Box cricket ground">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F3D2E"/>
+      <stop offset="1" stop-color="#245f48"/>
+    </linearGradient>
+    <radialGradient id="turf2" cx="0.5" cy="0.2" r="0.9">
+      <stop offset="0" stop-color="#57bb5b"/>
+      <stop offset="1" stop-color="#357c39"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky2)"/>
+  <rect y="110" width="800" height="340" fill="url(#turf2)"/>
+  <!-- netting suggestion -->
+  <g stroke="#F6F5F0" stroke-width="1.5" opacity="0.18">
+    <path d="M0 110 H800"/>
+    <path d="M60 110 V0 M180 110 V0 M300 110 V0 M420 110 V0 M540 110 V0 M660 110 V0 M780 110 V0"/>
+    <path d="M0 40 H800 M0 75 H800"/>
+  </g>
+  <!-- boundary arc -->
+  <path d="M-40 430 Q400 200 840 430" fill="none" stroke="#F6F5F0" stroke-width="4" opacity="0.55"/>
+  <!-- pitch strip -->
+  <polygon points="352,214 448,214 486,430 314,430" fill="#cbbf94" opacity="0.92"/>
+  <g stroke="#F6F5F0" stroke-width="3" opacity="0.9">
+    <path d="M336 396 H464"/>
+    <path d="M364 232 H436"/>
+  </g>
+  <!-- stumps -->
+  <g stroke="#F6F5F0" stroke-width="4" opacity="0.95">
+    <path d="M390 232 V206"/><path d="M400 232 V206"/><path d="M410 232 V206"/>
+  </g>
+  <g stroke="#F6F5F0" stroke-width="5" opacity="0.95">
+    <path d="M386 396 V362"/><path d="M400 396 V362"/><path d="M414 396 V362"/>
+  </g>
+</svg>

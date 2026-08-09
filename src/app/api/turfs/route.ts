@@ -29,16 +29,31 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji } = body;
+  // Same guard as the other write routes: a malformed or empty body would
+  // otherwise throw before validation and surface as an unhandled 500.
+  let body;
+  try {
+    body = await req.json();
+    if (body === null || typeof body !== 'object') throw new Error('body is not an object');
+  } catch {
+    return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
+  }
+
+  const { name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji, photo_url } = body;
 
   if (!name || !owner_name || !locality || !sport || !price_per_hour) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
+  // Only ever a path we produced. Rejecting anything else stops a caller
+  // pointing a turf's image at an arbitrary external or javascript: URL.
+  if (photo_url != null && !/^\/turf-photos\/[A-Za-z0-9._-]+$/.test(String(photo_url))) {
+    return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
+  }
+
   const stmt = db.prepare(`
-    INSERT INTO turfs (name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO turfs (name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji, photo_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     name,
@@ -48,7 +63,8 @@ export async function POST(req: NextRequest) {
     price_per_hour,
     open_time || '06:00',
     close_time || '23:00',
-    photo_emoji || '⚽'
+    photo_emoji || '⚽',
+    photo_url ?? null
   );
 
   const turf = db.prepare('SELECT * FROM turfs WHERE id = ?').get(result.lastInsertRowid);

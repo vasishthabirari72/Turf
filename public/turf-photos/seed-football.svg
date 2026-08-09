@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="Football pitch">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F3D2E"/>
+      <stop offset="1" stop-color="#1c5a44"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3C8C40"/>
+      <stop offset="1" stop-color="#4CAF50"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <rect y="120" width="800" height="330" fill="url(#grass)"/>
+  <!-- mown stripes -->
+  <g fill="#ffffff" opacity="0.05">
+    <rect x="0" y="120" width="100" height="330"/>
+    <rect x="200" y="120" width="100" height="330"/>
+    <rect x="400" y="120" width="100" height="330"/>
+    <rect x="600" y="120" width="100" height="330"/>
+  </g>
+  <!-- floodlights -->
+  <g stroke="#0b2c21" stroke-width="6" opacity="0.8">
+    <path d="M110 120 V54"/><path d="M690 120 V54"/>
+  </g>
+  <g fill="#F0A500" opacity="0.9">
+    <rect x="82" y="36" width="56" height="20" rx="4"/>
+    <rect x="662" y="36" width="56" height="20" rx="4"/>
+  </g>
+  <!-- pitch markings -->
+  <g stroke="#F6F5F0" stroke-width="4" fill="none" opacity="0.85">
+    <rect x="60" y="170" width="680" height="240" rx="2"/>
+    <path d="M400 170 V410"/>
+    <circle cx="400" cy="290" r="58"/>
+    <rect x="60" y="222" width="86" height="136"/>
+    <rect x="654" y="222" width="86" height="136"/>
+  </g>
+  <circle cx="400" cy="290" r="6" fill="#F6F5F0" opacity="0.85"/>
+</svg>

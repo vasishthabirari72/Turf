@@ -11,6 +11,7 @@ interface Turf {
   sport: string;
   price_per_hour: number;
   photo_emoji: string;
+  photo_url: string | null;
   rating: number;
 }
 
@@ -95,12 +96,33 @@ export default function Search() {
               className="bg-white rounded-xl border p-5 hover:shadow-md transition-shadow"
               style={{ borderColor: "var(--line)" }}
             >
-              <div className="flex items-start justify-between">
-                <div className="text-3xl">{t.photo_emoji}</div>
-                <div className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: "var(--manual-bg)", color: "#8a5a00" }}>
-                  ★ {t.rating.toFixed(1)}
+              {/* Real photo when there is one; the emoji layout is the fallback,
+                  so turfs listed before photos existed still look intentional. */}
+              {t.photo_url ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={t.photo_url}
+                    alt={t.name}
+                    loading="lazy"
+                    className="w-full h-36 rounded-lg object-cover"
+                    style={{ border: "1px solid var(--line)" }}
+                  />
+                  <div
+                    className="absolute top-2 right-2 text-xs font-semibold px-2 py-1 rounded-full"
+                    style={{ background: "var(--manual-bg)", color: "#8a5a00" }}
+                  >
+                    ★ {t.rating.toFixed(1)}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-start justify-between">
+                  <div className="text-3xl">{t.photo_emoji}</div>
+                  <div className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: "var(--manual-bg)", color: "#8a5a00" }}>
+                    ★ {t.rating.toFixed(1)}
+                  </div>
+                </div>
+              )}
               <div className="font-semibold mt-3">{t.name}</div>
               <div className="text-sm mt-0.5" style={{ color: "var(--ink-soft)" }}>{t.locality} · {t.sport}</div>
               <div className="flex items-center justify-between mt-4">

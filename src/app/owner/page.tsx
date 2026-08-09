@@ -22,6 +22,9 @@ export default function OwnerDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false); // form submit
   const [turfsLoading, setTurfsLoading] = useState(true); // initial turf list
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("owner_name");
@@ -50,10 +53,39 @@ export default function OwnerDashboard() {
     setOwnerName(nameInput.trim());
   }
 
+  function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setPhotoFile(file);
+    setFormError(null);
+    // Local preview only — nothing is uploaded until the form is submitted.
+    setPhotoPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
   async function handleAddTurf(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
+    setFormError(null);
     const form = new FormData(e.currentTarget);
+
+    // Upload first: if the photo fails we stop here rather than creating a turf
+    // that silently has no picture.
+    let photoUrl: string | null = null;
+    if (photoFile) {
+      const fd = new FormData();
+      fd.append("file", photoFile);
+      const up = await fetch("/api/upload", { method: "POST", body: fd });
+      const upData = await up.json();
+      if (!up.ok) {
+        setFormError(upData.error || "Could not upload that photo.");
+        setLoading(false);
+        return;
+      }
+      photoUrl = upData.url;
+    }
+
     const payload = {
       name: form.get("name"),
       owner_name: ownerName,
@@ -61,6 +93,7 @@ export default function OwnerDashboard() {
       sport: form.get("sport"),
       price_per_hour: Number(form.get("price")),
       photo_emoji: form.get("sport") === "Cricket" ? "🏏" : form.get("sport") === "Badminton" ? "🏸" : "⚽",
+      photo_url: photoUrl,
     };
     const res = await fetch("/api/turfs", {
       method: "POST",
@@ -68,8 +101,15 @@ export default function OwnerDashboard() {
       body: JSON.stringify(payload),
     });
     const newTurf = await res.json();
+    if (!res.ok) {
+      setFormError(newTurf.error || "Could not add that turf.");
+      setLoading(false);
+      return;
+    }
     setTurfs((prev) => [newTurf, ...prev]);
     setShowForm(false);
+    setPhotoFile(null);
+    setPhotoPreview(null);
     setLoading(false);
   }
 
@@ -145,6 +185,51 @@ export default function OwnerDashboard() {
             <label className="text-base font-semibold block mb-1.5">Price per hour (₹)</label>
             <input name="price" type="number" required min={1} className="tap-target w-full border rounded-lg px-3 py-3 text-base" style={{ borderColor: "var(--line)" }} placeholder="800" />
           </div>
+          <div className="sm:col-span-2">
+            <label className="text-base font-semibold block mb-1.5" htmlFor="turf-photo">
+              Photo of your turf <span style={{ color: "var(--ink-soft)" }}>(optional)</span>
+            </label>
+            <div className="flex items-center gap-3 flex-wrap">
+              {photoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoPreview}
+                  alt="Preview of the photo you picked"
+                  className="w-24 h-20 rounded-lg object-cover shrink-0"
+                  style={{ border: "1px solid var(--line)" }}
+                />
+              ) : (
+                <div
+                  className="w-24 h-20 rounded-lg flex items-center justify-center text-2xl shrink-0"
+                  style={{ background: "var(--chalk)", border: "1px dashed var(--line)" }}
+                >
+                  📷
+                </div>
+              )}
+              <input
+                id="turf-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handlePhotoPick}
+                disabled={loading}
+                className="tap-target flex-1 min-w-40 text-base"
+              />
+            </div>
+            <div className="text-sm mt-2" style={{ color: "var(--ink-soft)" }}>
+              JPG, PNG or WebP, up to 5MB. Without one we&apos;ll show a sport icon instead.
+            </div>
+          </div>
+
+          {formError && (
+            <div
+              role="alert"
+              className="sm:col-span-2 rounded-lg px-3 py-2.5 text-base font-medium"
+              style={{ background: "var(--booked-bg)", border: "1px solid var(--danger)", color: "var(--danger)" }}
+            >
+              {formError}
+            </div>
+          )}
+
           <div className="sm:col-span-2">
             <button
               disabled={loading}

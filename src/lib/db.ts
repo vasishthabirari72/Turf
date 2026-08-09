@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS turfs (
   price_per_hour INTEGER NOT NULL,
   open_time TEXT NOT NULL DEFAULT '06:00',
   close_time TEXT NOT NULL DEFAULT '23:00',
-  photo_emoji TEXT DEFAULT '⚽',
+  photo_emoji TEXT DEFAULT '⚽', -- fallback when there is no photo
+  photo_url TEXT,                -- e.g. '/turf-photos/xyz.jpg', NULL if none
   rating REAL DEFAULT 4.5,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -70,21 +71,30 @@ if (!slotOverrideColumns.some((c) => c.name === 'payment_method')) {
   db.exec(`ALTER TABLE slot_overrides ADD COLUMN payment_method TEXT`);
 }
 
+// And photo_url — turfs listed before photos existed keep their emoji.
+const turfColumns = db.prepare('PRAGMA table_info(turfs)').all() as { name: string }[];
+if (!turfColumns.some((c) => c.name === 'photo_url')) {
+  db.exec(`ALTER TABLE turfs ADD COLUMN photo_url TEXT`);
+}
+
 // Seed data only if empty
 const turfCount = (db.prepare('SELECT COUNT(*) as c FROM turfs').get() as { c: number }).c;
 
 if (turfCount === 0) {
   const insertTurf = db.prepare(`
-    INSERT INTO turfs (name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji, rating)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO turfs (name, owner_name, locality, sport, price_per_hour, open_time, close_time, photo_emoji, rating, photo_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  // Three seed turfs carry a photo and two deliberately don't, so both the photo
+  // and the emoji fallback are visible side by side in a fresh demo. These are
+  // hand-drawn SVG illustrations in the app's palette, not stock photography.
   const turfs = [
-    ['Green Arena Box Cricket', 'Ramesh Patil', 'Andheri West', 'Cricket', 800, '06:00', '23:00', '🏏', 4.6],
-    ['Kickoff Turf', 'Suresh Nair', 'Andheri West', 'Football', 1000, '06:00', '23:30', '⚽', 4.3],
-    ['Ace Badminton Court', 'Priya Shah', 'Andheri East', 'Badminton', 500, '06:00', '22:00', '🏸', 4.8],
-    ['Champions Football Ground', 'Vikram Singh', 'Andheri East', 'Football', 1200, '05:30', '23:00', '⚽', 4.4],
-    ['Striker\'s Box Cricket', 'Anil Kumar', 'Jogeshwari', 'Cricket', 700, '07:00', '22:30', '🏏', 4.1],
+    ['Green Arena Box Cricket', 'Ramesh Patil', 'Andheri West', 'Cricket', 800, '06:00', '23:00', '🏏', 4.6, '/turf-photos/seed-cricket.svg'],
+    ['Kickoff Turf', 'Suresh Nair', 'Andheri West', 'Football', 1000, '06:00', '23:30', '⚽', 4.3, '/turf-photos/seed-football.svg'],
+    ['Ace Badminton Court', 'Priya Shah', 'Andheri East', 'Badminton', 500, '06:00', '22:00', '🏸', 4.8, '/turf-photos/seed-badminton.svg'],
+    ['Champions Football Ground', 'Vikram Singh', 'Andheri East', 'Football', 1200, '05:30', '23:00', '⚽', 4.4, null],
+    ['Striker\'s Box Cricket', 'Anil Kumar', 'Jogeshwari', 'Cricket', 700, '07:00', '22:30', '🏏', 4.1, null],
   ];
 
   for (const t of turfs) insertTurf.run(...t);

@@ -40,6 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# photos uploaded through the owner form at runtime. The seed-*.svg
+# illustrations that ship with the repo are deliberately not ignored.
+/public/turf-photos/upload-*
+
 # local sqlite database — src/lib/db.ts creates and seeds this on first run,
 # so a fresh clone builds its own with dates relative to today. The -wal/-shm
 # files are transient SQLite journals and must never be committed.

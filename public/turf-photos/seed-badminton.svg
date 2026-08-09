@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450" role="img" aria-label="Indoor badminton court">
+  <defs>
+    <linearGradient id="hall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123a2d"/>
+      <stop offset="1" stop-color="#1e5340"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f7d4f"/>
+      <stop offset="1" stop-color="#1f5c3a"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#hall)"/>
+  <!-- ceiling lights -->
+  <g fill="#F6F5F0" opacity="0.5">
+    <rect x="120" y="34" width="140" height="10" rx="5"/>
+    <rect x="330" y="24" width="140" height="10" rx="5"/>
+    <rect x="540" y="34" width="140" height="10" rx="5"/>
+  </g>
+  <rect y="130" width="800" height="320" fill="url(#floor)"/>
+  <!-- court in perspective -->
+  <polygon points="250,170 550,170 730,420 70,420" fill="#3C8C40" opacity="0.55"/>
+  <g stroke="#F6F5F0" stroke-width="3.5" fill="none" opacity="0.9">
+    <polygon points="250,170 550,170 730,420 70,420"/>
+    <path d="M295,212 H505 M262,186 H538"/>
+    <path d="M400,170 V420"/>
+    <path d="M175,295 H625"/>
+    <path d="M150,330 H650"/>
+  </g>
+  <!-- net -->
+  <g opacity="0.95">
+    <rect x="168" y="252" width="464" height="52" fill="#F6F5F0" opacity="0.16"/>
+    <path d="M168 252 H632" stroke="#F6F5F0" stroke-width="5"/>
+    <path d="M168 252 V318 M632 252 V318" stroke="#0F3D2E" stroke-width="7"/>
+  </g>
+  <!-- shuttle -->
+  <g transform="translate(452 208) rotate(20)" opacity="0.95">
+    <circle cx="0" cy="0" r="7" fill="#F6F5F0"/>
+    <path d="M0 -6 L14 -22 M0 0 L20 -10 M0 6 L14 4" stroke="#F6F5F0" stroke-width="3" fill="none"/>
+  </g>
+</svg>
