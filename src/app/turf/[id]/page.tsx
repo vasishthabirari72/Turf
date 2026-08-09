@@ -139,7 +139,13 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
     const res = await fetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ turf_id: id, date, start_time: selected, customer_name: name.trim() }),
+      body: JSON.stringify({
+        turf_id: id,
+        date,
+        start_time: selected,
+        customer_name: name.trim(),
+        payment_method: method,
+      }),
     });
     const data = await res.json();
     setPaying(false);

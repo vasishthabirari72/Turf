@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS slot_overrides (
   status TEXT NOT NULL, -- 'app_booking' | 'manual_block'
   note TEXT,
   customer_name TEXT,
+  -- 'card' | 'upi' | 'cod' for app bookings; NULL for manual blocks and for
+  -- bookings made before this column existed. 'cod' means the owner still has
+  -- to collect the money in person, which is why the calendar flags it.
+  payment_method TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (turf_id) REFERENCES turfs(id)
 );
@@ -58,6 +62,12 @@ CREATE TABLE IF NOT EXISTS player_requests (
 const playerRequestColumns = db.prepare('PRAGMA table_info(player_requests)').all() as { name: string }[];
 if (!playerRequestColumns.some((c) => c.name === 'pending_joiners')) {
   db.exec(`ALTER TABLE player_requests ADD COLUMN pending_joiners TEXT NOT NULL DEFAULT '[]'`);
+}
+
+// Same story for payment_method — nullable, so existing rows stay valid.
+const slotOverrideColumns = db.prepare('PRAGMA table_info(slot_overrides)').all() as { name: string }[];
+if (!slotOverrideColumns.some((c) => c.name === 'payment_method')) {
+  db.exec(`ALTER TABLE slot_overrides ADD COLUMN payment_method TEXT`);
 }
 
 // Seed data only if empty

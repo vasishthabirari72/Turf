@@ -9,7 +9,11 @@ interface Slot {
   status: "open" | "app_booking" | "manual_block";
   note: string | null;
   customer_name: string | null;
+  // 'card' | 'upi' | 'cod', or null for manual blocks and older bookings.
+  payment_method: string | null;
 }
+
+const CASH = "💵";
 interface Turf {
   id: number;
   name: string;
@@ -29,10 +33,13 @@ const SLOT_STYLES = {
   manual_block: { bg: "var(--manual-bg)", border: "var(--amber)", text: "#8a5a00" },
 } as const;
 
+// `style` picks the swatch colours from SLOT_STYLES; `key` is just the React key,
+// since paid and cash bookings deliberately share the same colours.
 const LEGEND = [
-  { key: "open", label: "Open", hint: "players can book it" },
-  { key: "app_booking", label: "Booked", hint: "a player booked it on the app" },
-  { key: "manual_block", label: "Blocked", hint: "you kept it for a phone booking" },
+  { key: "open", style: "open", label: "Open", hint: "players can book it" },
+  { key: "paid", style: "app_booking", label: "Booked", hint: "already paid online" },
+  { key: "cash", style: "app_booking", label: `Booked ${CASH}`, hint: "collect the cash at the turf" },
+  { key: "blocked", style: "manual_block", label: "Blocked", hint: "you kept it for a phone booking" },
 ] as const;
 
 function fmt(d: Date) {
@@ -141,6 +148,8 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
     );
   }
 
+  const cashSlots = slots.filter((s) => s.status === "app_booking" && s.payment_method === "cod");
+
   // The API enforces this too; this just avoids showing someone a calendar whose
   // controls would all be rejected.
   if (!sameName(turf.owner_name, ownerName)) {
@@ -220,7 +229,7 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
       <div className="mb-5 rounded-xl p-4 flex flex-col gap-3" style={{ background: "white", border: "1px solid var(--line)" }}>
         <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>What the colours mean</div>
         {LEGEND.map((item) => {
-          const s = SLOT_STYLES[item.key];
+          const s = SLOT_STYLES[item.style];
           return (
             <div key={item.key} className="flex items-center gap-3">
               <span
@@ -236,6 +245,22 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         })}
       </div>
 
+      {/* Cash bookings are the only ones the owner still has to act on, so the
+          day's total is worth stating outright rather than making them count
+          tiles. Hidden entirely when there's nothing to collect. */}
+      {cashSlots.length > 0 && (
+        <div
+          className="mb-5 rounded-xl p-4 text-base leading-relaxed"
+          style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}
+        >
+          <strong>
+            {CASH} ₹{cashSlots.length * turf.price_per_hour} to collect on this day
+          </strong>{" "}
+          — {cashSlots.length} booking{cashSlots.length > 1 ? "s" : ""} paying cash at the turf
+          {" "}({cashSlots.map((s) => s.time).join(", ")}).
+        </div>
+      )}
+
       {/* scroll-mt clears the sticky 64px header when we jump here. */}
       <div
         ref={gridRef}
@@ -245,6 +270,7 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         {slots.map((slot) => {
           const isBusy = busy === slot.time;
           const { bg, border, text } = SLOT_STYLES[slot.status];
+          const isCash = slot.status === "app_booking" && slot.payment_method === "cod";
 
           return (
             <button
@@ -255,7 +281,7 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
               style={{ background: bg, borderColor: border, opacity: isBusy ? 0.5 : 1 }}
               title={
                 slot.status === "app_booking"
-                  ? `Booked on the app by ${slot.customer_name}`
+                  ? `Booked on the app by ${slot.customer_name}${isCash ? " — paying cash at the turf" : ""}`
                   : slot.status === "manual_block"
                   ? "Tap to open this time again"
                   : "Tap to block this time"
@@ -264,6 +290,7 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
               <div className="font-bold text-base" style={{ color: text }}>{slot.time}</div>
               <div className="text-sm font-semibold leading-tight" style={{ color: text }}>
                 {slot.status === "app_booking" ? "Booked" : slot.status === "manual_block" ? "Blocked" : "Open"}
+                {isCash && <span title="Cash to collect"> {CASH}</span>}
               </div>
               {/* Says what a tap does — there are no hover tooltips on a phone. */}
               <div className="text-xs leading-tight truncate" style={{ color: text, opacity: 0.75 }}>

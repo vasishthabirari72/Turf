@@ -12,6 +12,7 @@ interface Override {
   status: string;
   note: string | null;
   customer_name: string | null;
+  payment_method: string | null;
 }
 
 function timeToMinutes(t: string) {
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
   if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
 
   const overrides = db
-    .prepare('SELECT start_time, status, note, customer_name FROM slot_overrides WHERE turf_id = ? AND date = ?')
+    .prepare('SELECT start_time, status, note, customer_name, payment_method FROM slot_overrides WHERE turf_id = ? AND date = ?')
     .all(turfId, date) as unknown as Override[];
 
   const overrideMap = new Map(overrides.map((o) => [o.start_time, o]));
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
       status: override ? override.status : 'open',
       note: override?.note || null,
       customer_name: override?.customer_name || null,
+      payment_method: override?.payment_method || null,
     });
   }
 

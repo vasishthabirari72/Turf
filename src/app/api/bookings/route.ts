@@ -3,6 +3,11 @@ import db, { isUniqueConstraintError } from '@/lib/db';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
 
+// 'cod' is pay-in-cash-at-the-turf. Kept in sync with PAY_METHODS in
+// src/app/turf/[id]/page.tsx — the owner calendar reads this value back to
+// decide which bookings still need money collected in person.
+const PAYMENT_METHODS = ['card', 'upi', 'cod'];
+
 export async function POST(req: NextRequest) {
   // A malformed or empty body would otherwise throw before any validation runs
   // and surface as an unhandled 500. A null body parses fine but blows up on
@@ -15,11 +20,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { turf_id, date, start_time, customer_name } = body;
+  const { turf_id, date, start_time, customer_name, payment_method } = body;
 
   if (!turf_id || !date || !start_time || !customer_name) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
+
+  // Optional, so older clients and bookings made before this existed still work;
+  // stored as NULL when absent. Rejected outright if present but nonsense, so
+  // the owner's calendar can trust the value it reads back.
+  // null is treated the same as omitting it — a client serialising an optional
+  // field shouldn't get a 400 for saying "no method" explicitly.
+  if (payment_method != null && !PAYMENT_METHODS.includes(payment_method)) {
+    return NextResponse.json(
+      { error: `payment_method must be one of: ${PAYMENT_METHODS.join(', ')}` },
+      { status: 400 }
+    );
+  }
+  const method: string | null = payment_method ?? null;
 
   const existing = db
     .prepare('SELECT id FROM slot_overrides WHERE turf_id = ? AND date = ? AND start_time = ?')
@@ -32,12 +50,13 @@ export async function POST(req: NextRequest) {
   }
 
   const stmt = db.prepare(
-    `INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name) VALUES (?, ?, ?, 'app_booking', ?)`
+    `INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name, payment_method)
+     VALUES (?, ?, ?, 'app_booking', ?, ?)`
   );
 
   let result;
   try {
-    result = stmt.run(turf_id, date, start_time, customer_name);
+    result = stmt.run(turf_id, date, start_time, customer_name, method);
   } catch (err) {
     // Another request won the race between our SELECT and this INSERT.
     if (isUniqueConstraintError(err)) {
@@ -57,6 +76,7 @@ export async function POST(req: NextRequest) {
         date,
         start_time,
         customer_name,
+        payment_method: method,
         price: turf.price_per_hour,
       },
     },
