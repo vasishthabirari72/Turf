@@ -31,6 +31,16 @@ interface Turf {
 // payment webhook — a client-side success callback must never be trusted.
 // ---------------------------------------------------------------------------
 
+type PayMethod = "card" | "upi" | "cod";
+
+// "cod" is pay-at-the-turf in cash — the way most turf bookings are settled
+// today, so it belongs alongside the online options rather than under them.
+const PAY_METHODS: { key: PayMethod; label: string; icon: string }[] = [
+  { key: "card", label: "Card", icon: "💳" },
+  { key: "upi", label: "UPI", icon: "📱" },
+  { key: "cod", label: "Pay at turf", icon: "💵" },
+];
+
 // Cosmetic only — groups digits so the field reads like a card number.
 function formatCardNumber(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 16);
@@ -62,9 +72,11 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
   // Step 2 of the booking flow — the mock payment sheet.
   const [payOpen, setPayOpen] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [method, setMethod] = useState<PayMethod>("card");
   const [card, setCard] = useState("");
   const [expiry, setExpiry] = useState("");
   const [cvv, setCvv] = useState("");
+  const [upiId, setUpiId] = useState("");
   const [cardError, setCardError] = useState<string | null>(null);
 
   const { date } = dayLabel(dayOffset);
@@ -103,9 +115,14 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
   async function handlePay() {
     if (!selected || !name.trim()) return;
 
-    // Presence check only — still no real card validation (see MOCK PAYMENT above).
-    if (!card.trim() || !expiry.trim() || !cvv.trim()) {
+    // Presence checks only — nothing here validates a real card or UPI handle
+    // (see MOCK PAYMENT above). Cash at the turf has nothing to collect.
+    if (method === "card" && (!card.trim() || !expiry.trim() || !cvv.trim())) {
       setCardError("Please enter card details");
+      return;
+    }
+    if (method === "upi" && !upiId.trim()) {
+      setCardError("Please enter your UPI ID");
       return;
     }
 
@@ -113,7 +130,11 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
     setPaying(true);
     setError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    // Only the online methods pretend to talk to a gateway; paying at the turf
+    // involves no round-trip, so it books immediately.
+    if (method !== "cod") {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    }
 
     const res = await fetch("/api/bookings", {
       method: "POST",
@@ -135,6 +156,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
       setCard("");
       setExpiry("");
       setCvv("");
+      setUpiId("");
       // Without this the grid keeps showing the slot as available, and tapping
       // it again reports "just taken" against the booking you just made.
       loadSlots();
@@ -294,7 +316,9 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
 
             <div className="rounded-xl p-4 mb-5" style={{ background: "var(--chalk)", border: "1px solid var(--line)" }}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-sm" style={{ color: "var(--ink-soft)" }}>Amount to pay</span>
+                <span className="text-sm" style={{ color: "var(--ink-soft)" }}>
+                  {method === "cod" ? "Amount due at the turf" : "Amount to pay"}
+                </span>
                 <span className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>₹{turf.price_per_hour}</span>
               </div>
               <div className="mt-2 pt-2 text-sm leading-relaxed" style={{ borderTop: "1px solid var(--line)", color: "var(--ink-soft)" }}>
@@ -303,49 +327,108 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
               </div>
             </div>
 
-            <label className="text-sm font-semibold block mb-1.5" htmlFor="card-number">Card number</label>
-            <input
-              id="card-number"
-              value={card}
-              onChange={(e) => { setCard(formatCardNumber(e.target.value)); setCardError(null); }}
-              placeholder="1234 5678 9012 3456"
-              inputMode="numeric"
-              autoComplete="off"
-              disabled={paying}
-              className="tap-target w-full border rounded-lg px-3 py-3 text-base tracking-wider mb-3"
-              style={{ borderColor: "var(--line)" }}
-            />
-
-            <div className="flex gap-3 mb-5">
-              <div className="flex-1 min-w-0">
-                <label className="text-sm font-semibold block mb-1.5" htmlFor="card-expiry">Expiry</label>
-                <input
-                  id="card-expiry"
-                  value={expiry}
-                  onChange={(e) => { setExpiry(formatExpiry(e.target.value)); setCardError(null); }}
-                  placeholder="MM/YY"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  disabled={paying}
-                  className="tap-target w-full border rounded-lg px-3 py-3 text-base"
-                  style={{ borderColor: "var(--line)" }}
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="text-sm font-semibold block mb-1.5" htmlFor="card-cvv">CVV</label>
-                <input
-                  id="card-cvv"
-                  value={cvv}
-                  onChange={(e) => { setCvv(e.target.value.replace(/\D/g, "").slice(0, 3)); setCardError(null); }}
-                  placeholder="123"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  disabled={paying}
-                  className="tap-target w-full border rounded-lg px-3 py-3 text-base"
-                  style={{ borderColor: "var(--line)" }}
-                />
-              </div>
+            {/* Method picker. Switching clears any pending error so a card
+                complaint doesn't linger over the UPI field. */}
+            <div className="grid grid-cols-3 gap-2 mb-5" role="group" aria-label="Payment method">
+              {PAY_METHODS.map((m) => {
+                const active = method === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => { setMethod(m.key); setCardError(null); }}
+                    disabled={paying}
+                    aria-pressed={active}
+                    className="tap-target rounded-lg border-2 px-2 py-2.5 flex flex-col items-center justify-center gap-1 disabled:opacity-60"
+                    style={
+                      active
+                        ? { background: "var(--pitch)", borderColor: "var(--pitch)", color: "white" }
+                        : { background: "var(--paper)", borderColor: "var(--line)", color: "var(--ink)" }
+                    }
+                  >
+                    <span className="text-lg leading-none">{m.icon}</span>
+                    <span className="text-xs font-semibold leading-tight text-center">{m.label}</span>
+                  </button>
+                );
+              })}
             </div>
+
+            {method === "card" && (
+              <>
+                <label className="text-sm font-semibold block mb-1.5" htmlFor="card-number">Card number</label>
+                <input
+                  id="card-number"
+                  value={card}
+                  onChange={(e) => { setCard(formatCardNumber(e.target.value)); setCardError(null); }}
+                  placeholder="1234 5678 9012 3456"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={paying}
+                  className="tap-target w-full border rounded-lg px-3 py-3 text-base tracking-wider mb-3"
+                  style={{ borderColor: "var(--line)" }}
+                />
+
+                <div className="flex gap-3 mb-5">
+                  <div className="flex-1 min-w-0">
+                    <label className="text-sm font-semibold block mb-1.5" htmlFor="card-expiry">Expiry</label>
+                    <input
+                      id="card-expiry"
+                      value={expiry}
+                      onChange={(e) => { setExpiry(formatExpiry(e.target.value)); setCardError(null); }}
+                      placeholder="MM/YY"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      disabled={paying}
+                      className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+                      style={{ borderColor: "var(--line)" }}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <label className="text-sm font-semibold block mb-1.5" htmlFor="card-cvv">CVV</label>
+                    <input
+                      id="card-cvv"
+                      value={cvv}
+                      onChange={(e) => { setCvv(e.target.value.replace(/\D/g, "").slice(0, 3)); setCardError(null); }}
+                      placeholder="123"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      disabled={paying}
+                      className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+                      style={{ borderColor: "var(--line)" }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {method === "upi" && (
+              <div className="mb-5">
+                <label className="text-sm font-semibold block mb-1.5" htmlFor="upi-id">UPI ID</label>
+                <input
+                  id="upi-id"
+                  value={upiId}
+                  onChange={(e) => { setUpiId(e.target.value); setCardError(null); }}
+                  placeholder="yourname@okhdfcbank"
+                  inputMode="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  disabled={paying}
+                  className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+                  style={{ borderColor: "var(--line)" }}
+                />
+                <div className="text-xs mt-2" style={{ color: "var(--ink-soft)" }}>
+                  Works with GPay, PhonePe, Paytm and any other UPI app.
+                </div>
+              </div>
+            )}
+
+            {method === "cod" && (
+              <div className="mb-5 rounded-lg p-4 text-base leading-relaxed" style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}>
+                <strong>Pay ₹{turf.price_per_hour} in cash at the turf.</strong> Your slot is
+                held now — nothing to pay online. Please reach 10 minutes early.
+              </div>
+            )}
 
             {cardError && (
               <div
@@ -369,15 +452,17 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
                     className="inline-block w-4 h-4 rounded-full animate-spin"
                     style={{ border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white" }}
                   />
-                  Processing…
+                  {method === "cod" ? "Booking…" : "Processing…"}
                 </>
+              ) : method === "cod" ? (
+                "Confirm booking"
               ) : (
                 `Pay ₹${turf.price_per_hour}`
               )}
             </button>
 
             <div className="text-xs text-center mt-3" style={{ color: "var(--ink-soft)" }}>
-              Demo only — no real payment is taken and no card details are stored.
+              Demo only — no real payment is taken, and no card or UPI details are stored.
             </div>
           </div>
         </div>
