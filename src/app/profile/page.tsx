@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 const ROLES = [
@@ -9,38 +9,62 @@ const ROLES = [
   { key: "both", label: "Both" },
 ];
 
+interface SavedUser {
+  phone: string | null;
+  role: string | null;
+}
+
 export default function Profile() {
   // Same localStorage key the rest of the app uses to identify someone.
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("player");
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Distinguishes "nothing saved yet" from "we couldn't reach the server".
+  // Those look identical on screen otherwise — a blank form — and the second
+  // one is dangerous: saving from it would overwrite a stored number with "".
+  // Deliberately contains no synchronous setState, so the effect below can call
+  // it directly; the retry button raises the spinner itself.
+  const loadProfile = useCallback(() => {
     const stored = localStorage.getItem("player_name") || "";
-    // Someone with no saved name skips the request but still resolves through a
-    // promise, so every state update below happens asynchronously.
-    const load: Promise<{ phone?: string; role?: string } | null> = stored
-      ? fetch(`/api/users?name=${encodeURIComponent(stored)}`)
-          .then((r) => r.json())
-          .catch(() => null)
-      : Promise.resolve(null);
 
-    load.then((user) => {
+    // The no-name branch still resolves through a promise so that every state
+    // update below happens asynchronously rather than in the effect body.
+    const load: Promise<{ ok: boolean; user: SavedUser | null }> = stored
+      ? fetch(`/api/users?name=${encodeURIComponent(stored)}`)
+          .then(async (r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return { ok: true, user: (await r.json()) as SavedUser | null };
+          })
+          .catch(() => ({ ok: false, user: null }))
+      : Promise.resolve({ ok: true, user: null });
+
+    load.then(({ ok, user }) => {
       setName(stored);
       if (user) {
         setPhone(user.phone || "");
         if (user.role) setRole(user.role);
       }
+      setLoadFailed(!ok);
       setLoading(false);
     });
   }, []);
 
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (loadFailed) {
+      setError("Still can't load your saved details — try again before saving.");
+      return;
+    }
     if (!name.trim()) {
       setError("Please enter your name.");
       return;
@@ -87,6 +111,28 @@ export default function Profile() {
         Saved so you don&apos;t have to type it again every time you book.
       </p>
 
+      {/* Saving from a form we failed to populate would replace a stored number
+          with an empty one, so the form is held until the load succeeds. */}
+      {loadFailed && (
+        <div
+          role="alert"
+          className="mb-5 rounded-lg p-4 text-base leading-relaxed"
+          style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}
+        >
+          <strong>Couldn&apos;t load your saved details.</strong> Nothing has been lost —
+          we just can&apos;t show them right now. Saving is paused so it doesn&apos;t
+          overwrite what you already had.
+          <button
+            type="button"
+            onClick={() => { setLoading(true); loadProfile(); }}
+            className="tap-target block mt-3 px-5 py-2.5 rounded-lg text-base font-semibold text-white"
+            style={{ background: "var(--pitch)" }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSave} className="bg-white rounded-xl border p-5 flex flex-col gap-4" style={{ borderColor: "var(--line)" }}>
         <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Your details</div>
 
@@ -97,7 +143,7 @@ export default function Profile() {
             value={name}
             onChange={(e) => { setName(e.target.value); setSaved(false); }}
             placeholder="e.g. Ramesh Patil"
-            disabled={saving}
+            disabled={saving || loadFailed}
             className="tap-target w-full border rounded-lg px-3 py-3 text-base"
             style={{ borderColor: "var(--line)" }}
           />
@@ -115,7 +161,7 @@ export default function Profile() {
             placeholder="e.g. 98765 43210"
             inputMode="tel"
             autoComplete="tel"
-            disabled={saving}
+            disabled={saving || loadFailed}
             className="tap-target w-full border rounded-lg px-3 py-3 text-base"
             style={{ borderColor: "var(--line)" }}
           />
@@ -136,7 +182,7 @@ export default function Profile() {
                   type="button"
                   onClick={() => { setRole(r.key); setSaved(false); }}
                   aria-pressed={active}
-                  disabled={saving}
+                  disabled={saving || loadFailed}
                   className="tap-target px-4 py-2.5 rounded-lg text-base font-medium border disabled:opacity-60"
                   style={
                     active
@@ -173,7 +219,7 @@ export default function Profile() {
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || loadFailed}
           className="tap-target self-start px-5 py-3 rounded-lg text-base font-semibold text-white disabled:opacity-60"
           style={{ background: "var(--turf)" }}
         >
