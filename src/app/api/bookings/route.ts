@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db, { isUniqueConstraintError } from '@/lib/db';
+import sql, { isUniqueConstraintError } from '@/lib/db';
 import { priceForSlot, type PricingRule } from '@/lib/pricing';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
@@ -27,9 +27,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Optional, so older clients and bookings made before this existed still work;
-  // stored as NULL when absent. Rejected outright if present but nonsense, so
-  // the owner's calendar can trust the value it reads back.
   // null is treated the same as omitting it — a client serialising an optional
   // field shouldn't get a 400 for saying "no method" explicitly.
   if (payment_method != null && !PAYMENT_METHODS.includes(payment_method)) {
@@ -40,37 +37,38 @@ export async function POST(req: NextRequest) {
   }
   const method: string | null = payment_method ?? null;
 
-  const existing = db
-    .prepare('SELECT id FROM slot_overrides WHERE turf_id = ? AND date = ? AND start_time = ?')
-    .get(turf_id, date, start_time);
+  const existing = await sql<{ id: number }[]>`
+    SELECT id FROM slot_overrides
+     WHERE turf_id = ${turf_id} AND date = ${date} AND start_time = ${start_time}
+  `;
 
   // Fast pre-check: cheap, and gives the common case a clean answer without
   // throwing. The unique index below is what actually guarantees exclusivity.
-  if (existing) {
+  if (existing.length > 0) {
     return NextResponse.json({ error: SLOT_TAKEN }, { status: 409 });
   }
 
-  const turf = db.prepare('SELECT price_per_hour FROM turfs WHERE id = ?').get(turf_id) as
-    | { price_per_hour: number }
-    | undefined;
-  if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+  const turfRows = await sql<{ price_per_hour: number }[]>`
+    SELECT price_per_hour FROM turfs WHERE id = ${turf_id}
+  `;
+  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
 
   // Resolve the price server-side from the pricing rules rather than trusting
   // anything the client sends, and store it, so a later rule change never
   // rewrites what this booking cost.
-  const rules = db
-    .prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ?')
-    .all(turf_id) as unknown as PricingRule[];
-  const price = priceForSlot(start_time, rules, turf.price_per_hour);
+  const rules = await sql<PricingRule[]>`
+    SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ${turf_id}
+  `;
+  const price = priceForSlot(start_time, rules, turfRows[0].price_per_hour);
 
-  const stmt = db.prepare(
-    `INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name, payment_method, price)
-     VALUES (?, ?, ?, 'app_booking', ?, ?, ?)`
-  );
-
-  let result;
+  let insertedId: number;
   try {
-    result = stmt.run(turf_id, date, start_time, customer_name, method, price);
+    const inserted = await sql<{ id: number }[]>`
+      INSERT INTO slot_overrides (turf_id, date, start_time, status, customer_name, payment_method, price)
+      VALUES (${turf_id}, ${date}, ${start_time}, 'app_booking', ${customer_name}, ${method}, ${price})
+      RETURNING id
+    `;
+    insertedId = inserted[0].id;
   } catch (err) {
     // Another request won the race between our SELECT and this INSERT.
     if (isUniqueConstraintError(err)) {
@@ -83,7 +81,7 @@ export async function POST(req: NextRequest) {
     {
       ok: true,
       booking: {
-        id: result.lastInsertRowid,
+        id: insertedId,
         turf_id,
         date,
         start_time,

@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the example must be committed: it documents what DATABASE_URL is and
+# contains no real credentials.
+!.env.local.example
 
 # vercel
 .vercel

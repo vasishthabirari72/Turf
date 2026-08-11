@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 import { priceForSlot, type PricingRule } from '@/lib/pricing';
 
 interface Turf {
@@ -33,27 +33,37 @@ function minutesToTime(m: number) {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const turfId = searchParams.get('turf_id');
+  const turfIdParam = searchParams.get('turf_id');
   const date = searchParams.get('date');
 
-  if (!turfId || !date) {
+  if (!turfIdParam || !date) {
     return NextResponse.json({ error: 'turf_id and date are required' }, { status: 400 });
   }
 
-  const turf = db.prepare('SELECT * FROM turfs WHERE id = ?').get(turfId) as Turf | undefined;
-  if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+  // Postgres compares an integer column against a typed parameter, so a
+  // non-numeric turf_id must be rejected here rather than reaching the query.
+  const turfId = Number(turfIdParam);
+  if (!Number.isInteger(turfId)) {
+    return NextResponse.json({ error: 'turf_id must be a number' }, { status: 400 });
+  }
 
-  const overrides = db
-    .prepare('SELECT start_time, status, note, customer_name, payment_method, price FROM slot_overrides WHERE turf_id = ? AND date = ?')
-    .all(turfId, date) as unknown as Override[];
+  const turfRows = await sql<Turf[]>`SELECT * FROM turfs WHERE id = ${turfId}`;
+  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+  const turf = turfRows[0];
+
+  const overrides = await sql<Override[]>`
+    SELECT start_time, status, note, customer_name, payment_method, price
+      FROM slot_overrides
+     WHERE turf_id = ${turfId} AND date = ${date}
+  `;
 
   const overrideMap = new Map(overrides.map((o) => [o.start_time, o]));
 
   // Peak/off-peak rules for this turf; hours they don't cover use the turf's
   // flat price_per_hour.
-  const rules = db
-    .prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ?')
-    .all(turfId) as unknown as PricingRule[];
+  const rules = await sql<PricingRule[]>`
+    SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ${turfId}
+  `;
 
   const slots = [];
   const start = timeToMinutes(turf.open_time);

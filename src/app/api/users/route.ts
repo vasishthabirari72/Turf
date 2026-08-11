@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 import { normalizeName } from '@/lib/names';
 
 // Saved details, keyed by name. No password, session or identity check — this
 // only spares people retyping. A phone number stored here is never checked
 // against anything.
 //
-// The name column is UNIQUE, and SQLite compares TEXT case-sensitively, which
+// The name column is UNIQUE and Postgres compares text case-sensitively, which
 // would let "Bob" and "bob" become two separate rows. Every lookup below
 // normalises instead, so this table agrees with sameName() used elsewhere.
 
@@ -20,10 +20,13 @@ interface UserRow {
   created_at: string;
 }
 
-function findByName(name: string): UserRow | undefined {
-  return db
-    .prepare('SELECT id, name, phone, role, created_at FROM users WHERE LOWER(TRIM(name)) = ?')
-    .get(normalizeName(name)) as UserRow | undefined;
+async function findByName(name: string): Promise<UserRow | undefined> {
+  const rows = await sql<UserRow[]>`
+    SELECT id, name, phone, role, created_at
+      FROM users
+     WHERE LOWER(TRIM(name)) = ${normalizeName(name)}
+  `;
+  return rows[0];
 }
 
 export async function GET(req: NextRequest) {
@@ -31,7 +34,7 @@ export async function GET(req: NextRequest) {
   if (!name || !normalizeName(name)) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
-  const user = findByName(name);
+  const user = await findByName(name);
   if (!user) {
     // Not an error: someone who has never saved details simply has none yet.
     return NextResponse.json(null);
@@ -62,15 +65,19 @@ export async function POST(req: NextRequest) {
 
   const cleanName = name.trim();
   const cleanPhone = typeof phone === 'string' ? phone.trim() || null : null;
-  const existing = findByName(cleanName);
+  const existing = await findByName(cleanName);
 
   if (existing) {
-    db.prepare('UPDATE users SET name = ?, phone = ?, role = ? WHERE id = ?')
-      .run(cleanName, cleanPhone, role ?? existing.role ?? null, existing.id);
+    await sql`
+      UPDATE users
+         SET name = ${cleanName}, phone = ${cleanPhone}, role = ${role ?? existing.role ?? null}
+       WHERE id = ${existing.id}
+    `;
   } else {
-    db.prepare('INSERT INTO users (name, phone, role) VALUES (?, ?, ?)')
-      .run(cleanName, cleanPhone, role ?? null);
+    await sql`
+      INSERT INTO users (name, phone, role) VALUES (${cleanName}, ${cleanPhone}, ${role ?? null})
+    `;
   }
 
-  return NextResponse.json(findByName(cleanName), { status: existing ? 200 : 201 });
+  return NextResponse.json(await findByName(cleanName), { status: existing ? 200 : 201 });
 }

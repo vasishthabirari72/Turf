@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 import { includesName, normalizeName } from '@/lib/names';
 
 // Joining is request-then-approve: the player lands in pending_joiners and only
 // moves to players_joined once the request's creator approves via /respond.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+
   // Reject unparseable/non-object bodies as 400 rather than crashing to a 500.
   let body;
   try {
@@ -21,10 +22,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'player_name is required' }, { status: 400 });
   }
 
-  const row = db.prepare('SELECT * FROM player_requests WHERE id = ?').get(id) as
-    | { id: number; players_needed: number; players_joined: string; pending_joiners: string; status: string }
-    | undefined;
+  const requestId = Number(id);
+  if (!Number.isInteger(requestId)) {
+    return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+  }
 
+  const rows = await sql<
+    { id: number; players_needed: number; players_joined: string; pending_joiners: string; status: string }[]
+  >`SELECT * FROM player_requests WHERE id = ${requestId}`;
+
+  const row = rows[0];
   if (!row) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
   if (row.status === 'full') return NextResponse.json({ error: 'This request is already full' }, { status: 409 });
 
@@ -44,12 +51,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // player actually chose, not a lowercased version of it.
   pending.push(player_name.trim());
 
-  db.prepare('UPDATE player_requests SET pending_joiners = ? WHERE id = ?').run(JSON.stringify(pending), id);
+  const updated = await sql<Record<string, unknown>[]>`
+    UPDATE player_requests SET pending_joiners = ${JSON.stringify(pending)}
+     WHERE id = ${requestId}
+     RETURNING *
+  `;
 
-  const updated = db.prepare('SELECT * FROM player_requests WHERE id = ?').get(id) as Record<string, unknown>;
   return NextResponse.json({
-    ...updated,
-    players_joined: JSON.parse(updated.players_joined as string),
-    pending_joiners: JSON.parse(updated.pending_joiners as string),
+    ...updated[0],
+    players_joined: JSON.parse(updated[0].players_joined as string),
+    pending_joiners: JSON.parse(updated[0].pending_joiners as string),
   });
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db, { isUniqueConstraintError } from '@/lib/db';
+import sql, { isUniqueConstraintError } from '@/lib/db';
 import { normalizeName, sameName } from '@/lib/names';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
@@ -30,18 +30,20 @@ export async function POST(req: NextRequest) {
   // rest of the app's identity model — a self-declared name, not an
   // authenticated one — but it stops one owner touching another's calendar.
   // Checked before the slot lookup so a non-owner can't probe slot state.
-  const turf = db.prepare('SELECT owner_name FROM turfs WHERE id = ?').get(turf_id) as
-    | { owner_name: string }
-    | undefined;
+  const turfRows = await sql<{ owner_name: string }[]>`
+    SELECT owner_name FROM turfs WHERE id = ${turf_id}
+  `;
 
-  if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
-  if (!sameName(turf.owner_name, acting_as)) {
+  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+  if (!sameName(turfRows[0].owner_name, acting_as)) {
     return NextResponse.json({ error: "Only this turf's owner can change its slots" }, { status: 403 });
   }
 
-  const existing = db
-    .prepare('SELECT * FROM slot_overrides WHERE turf_id = ? AND date = ? AND start_time = ?')
-    .get(turf_id, date, start_time) as { status: string; id: number } | undefined;
+  const existingRows = await sql<{ id: number; status: string }[]>`
+    SELECT id, status FROM slot_overrides
+     WHERE turf_id = ${turf_id} AND date = ${date} AND start_time = ${start_time}
+  `;
+  const existing = existingRows[0];
 
   if (action === 'block') {
     // Fast pre-check; the unique index is what actually guarantees exclusivity.
@@ -49,9 +51,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Slot is already unavailable' }, { status: 409 });
     }
     try {
-      db.prepare(
-        `INSERT INTO slot_overrides (turf_id, date, start_time, status, note) VALUES (?, ?, ?, 'manual_block', ?)`
-      ).run(turf_id, date, start_time, note || 'Blocked by owner');
+      await sql`
+        INSERT INTO slot_overrides (turf_id, date, start_time, status, note)
+        VALUES (${turf_id}, ${date}, ${start_time}, 'manual_block', ${note || 'Blocked by owner'})
+      `;
     } catch (err) {
       // A booking landed on this slot between our SELECT and this INSERT.
       if (isUniqueConstraintError(err)) {
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       );
     }
-    db.prepare('DELETE FROM slot_overrides WHERE id = ?').run(existing.id);
+    await sql`DELETE FROM slot_overrides WHERE id = ${existing.id}`;
     return NextResponse.json({ ok: true, status: 'open' });
   }
 

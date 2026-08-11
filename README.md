@@ -1,7 +1,8 @@
-# MaidaanConnect — Localhost Demo
+# MaidaanConnect
 
 A working demo of a turf booking + player-matchmaking platform, built to show turf owners
-in person before investing in a full production build.
+in person before investing in a full production build. Runs on Next.js with hosted
+Postgres, so it deploys to Vercel.
 
 ## What's in this demo
 
@@ -23,15 +24,25 @@ so it doesn't look empty when you demo it.
 
 ## How to run it
 
+This needs a Postgres database. The free tier of [Neon](https://neon.tech) is what it is
+set up for, but any Postgres works.
+
 ```bash
 npm install
+cp .env.local.example .env.local     # then paste your connection string into it
+npm run migrate                      # create the tables (safe to re-run)
+npm run seed                         # demo data; refuses if the database already has turfs
 npm run dev
 ```
 
 Then open **http://localhost:3000** in your browser.
 
-First run will create a `turf.db` SQLite file and seed it automatically. Delete `turf.db`
-(and the `-shm`/`-wal` files next to it) any time to reset back to the seed data.
+`npm run seed -- --force` wipes the demo tables and reseeds from scratch, resetting the
+ids so `/turf/1` is the first seeded turf again.
+
+Schema creation and seeding are deliberately **not** automatic. They used to run on import
+when the database was a local SQLite file; against a shared hosted database that would mean
+running DDL on every cold start and trying to reseed live data on every deploy.
 
 ## What's intentionally NOT built (by design, for speed)
 
@@ -49,14 +60,25 @@ First run will create a `turf.db` SQLite file and seed it automatically. Delete 
 These get added once you've validated real demand with owners (see the roadmap docs for
 what production would add).
 
-## Deploying this somewhere
+## Deploying to Vercel
 
-It won't run on Vercel or any other serverless host as-is. `src/lib/db.ts` opens a local
-SQLite file with `node:sqlite` and creates/seeds tables on first import — serverless
-filesystems are read-only apart from an ephemeral `/tmp`, so writes fail and no two
-requests share state. To put it on the internet you need either a host with a persistent
-disk (Railway, Render, Fly with a volume) or a hosted database (Turso/libSQL is the
-smallest change from here; Neon or Supabase if you'd rather move to Postgres).
+The database is hosted Postgres, so the app runs on serverless now.
+
+1. Create a Neon project and copy the **pooled** connection string (the host contains
+   `-pooler`).
+2. Run `npm run migrate` and `npm run seed` locally against it once, with `DATABASE_URL`
+   set in `.env.local`.
+3. Import the repo into Vercel and set `DATABASE_URL` as an environment variable for
+   Production, Preview and Development.
+4. Deploy.
+
+**One thing is still broken on Vercel: photo uploads.** `src/app/api/upload/route.ts`
+writes to `public/turf-photos` on local disk, which is exactly the constraint that forced
+the database off SQLite — a serverless filesystem is read-only. Uploading a photo on a
+deployed build fails with "Could not save that photo". Everything else works: turfs with
+no photo fall back to their emoji, and the committed `seed-*.svg` files ship with the
+build so seeded turfs keep their pictures. Fixing it means object storage (Vercel Blob is
+the smallest change); there is a TODO at the top of that route with the details.
 
 ## Project structure
 
@@ -69,7 +91,11 @@ src/app/
   owner/page.tsx            → owner: sign in + list of my turfs + add turf
   owner/turf/[id]/page.tsx  → owner: calendar + one-tap block/unblock slots
   api/                      → backend routes (turfs, slots, bookings, requests)
-src/lib/db.ts               → SQLite schema, seed data, unique-constraint helper
+src/lib/db.ts               → Postgres client (postgres.js) + unique-constraint helper
+src/lib/schema.ts           → CREATE TABLE / column migrations, run by the scripts
+src/lib/pricing.ts          → peak/off-peak rule matching, shared by API and UI
+scripts/migrate.ts          → npm run migrate
+scripts/seed.ts             → npm run seed
 src/lib/names.ts            → case/whitespace-insensitive name matching, shared by
                               the API routes and the UI so both agree on identity
 ```

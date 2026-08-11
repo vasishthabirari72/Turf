@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 import { normalizeName, sameName } from '@/lib/names';
 
 // The creator approves or rejects someone sitting in pending_joiners.
 // Approve moves them into players_joined; reject just drops them.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+
   // Reject unparseable/non-object bodies as 400 rather than crashing to a 500.
   let body;
   try {
@@ -24,17 +25,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "action must be 'approve' or 'reject'" }, { status: 400 });
   }
 
-  const row = db.prepare('SELECT * FROM player_requests WHERE id = ?').get(id) as
-    | {
-        id: number;
-        creator_name: string;
-        players_needed: number;
-        players_joined: string;
-        pending_joiners: string;
-        status: string;
-      }
-    | undefined;
+  const requestId = Number(id);
+  if (!Number.isInteger(requestId)) {
+    return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+  }
 
+  const rows = await sql<
+    {
+      id: number;
+      creator_name: string;
+      players_needed: number;
+      players_joined: string;
+      pending_joiners: string;
+      status: string;
+    }[]
+  >`SELECT * FROM player_requests WHERE id = ${requestId}`;
+
+  const row = rows[0];
   if (!row) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
 
   // Same fidelity as the rest of the app's identity model: a self-declared name,
@@ -54,10 +61,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const remainingPending = pending.filter((p) => p !== player_name);
 
   if (action === 'reject') {
-    db.prepare('UPDATE player_requests SET pending_joiners = ? WHERE id = ?').run(
-      JSON.stringify(remainingPending),
-      id
-    );
+    await sql`
+      UPDATE player_requests SET pending_joiners = ${JSON.stringify(remainingPending)}
+       WHERE id = ${requestId}
+    `;
   } else {
     // Don't let an approval push the roster past what was asked for.
     if (joined.length >= row.players_needed) {
@@ -65,15 +72,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     joined.push(player_name);
     const newStatus = joined.length >= row.players_needed ? 'full' : 'open';
-    db.prepare(
-      'UPDATE player_requests SET players_joined = ?, pending_joiners = ?, status = ? WHERE id = ?'
-    ).run(JSON.stringify(joined), JSON.stringify(remainingPending), newStatus, id);
+    await sql`
+      UPDATE player_requests
+         SET players_joined = ${JSON.stringify(joined)},
+             pending_joiners = ${JSON.stringify(remainingPending)},
+             status = ${newStatus}
+       WHERE id = ${requestId}
+    `;
   }
 
-  const updated = db.prepare('SELECT * FROM player_requests WHERE id = ?').get(id) as Record<string, unknown>;
+  const updated = await sql<Record<string, unknown>[]>`
+    SELECT * FROM player_requests WHERE id = ${requestId}
+  `;
+
   return NextResponse.json({
-    ...updated,
-    players_joined: JSON.parse(updated.players_joined as string),
-    pending_joiners: JSON.parse(updated.pending_joiners as string),
+    ...updated[0],
+    players_joined: JSON.parse(updated[0].players_joined as string),
+    pending_joiners: JSON.parse(updated[0].pending_joiners as string),
   });
 }

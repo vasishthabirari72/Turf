@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 import { normalizeName, sameName } from '@/lib/names';
 import { isValidTime, timeToMinutes } from '@/lib/pricing';
 
@@ -7,13 +7,21 @@ import { isValidTime, timeToMinutes } from '@/lib/pricing';
 // show the slot grid — but only the turf's owner may add one.
 
 export async function GET(req: NextRequest) {
-  const turfId = new URL(req.url).searchParams.get('turf_id');
-  if (!turfId) {
+  const turfIdParam = new URL(req.url).searchParams.get('turf_id');
+  if (!turfIdParam) {
     return NextResponse.json({ error: 'turf_id is required' }, { status: 400 });
   }
-  const rules = db
-    .prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE turf_id = ? ORDER BY start_time')
-    .all(turfId);
+  const turfId = Number(turfIdParam);
+  if (!Number.isInteger(turfId)) {
+    return NextResponse.json({ error: 'turf_id must be a number' }, { status: 400 });
+  }
+
+  const rules = await sql`
+    SELECT id, turf_id, start_time, end_time, price
+      FROM pricing_rules
+     WHERE turf_id = ${turfId}
+     ORDER BY start_time
+  `;
   return NextResponse.json(rules);
 }
 
@@ -47,19 +55,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Price must be a whole number above zero' }, { status: 400 });
   }
 
-  const turf = db.prepare('SELECT owner_name FROM turfs WHERE id = ?').get(turf_id) as
-    | { owner_name: string }
-    | undefined;
-  if (!turf) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
-  if (!sameName(turf.owner_name, acting_as)) {
+  const turfRows = await sql<{ owner_name: string }[]>`
+    SELECT owner_name FROM turfs WHERE id = ${turf_id}
+  `;
+  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
+  if (!sameName(turfRows[0].owner_name, acting_as)) {
     return NextResponse.json({ error: "Only this turf's owner can change its prices" }, { status: 403 });
   }
 
-  const result = db
-    .prepare('INSERT INTO pricing_rules (turf_id, start_time, end_time, price) VALUES (?, ?, ?, ?)')
-    .run(turf_id, start_time, end_time, priceNum);
-
-  const rule = db.prepare('SELECT id, turf_id, start_time, end_time, price FROM pricing_rules WHERE id = ?')
-    .get(result.lastInsertRowid);
-  return NextResponse.json(rule, { status: 201 });
+  const inserted = await sql`
+    INSERT INTO pricing_rules (turf_id, start_time, end_time, price)
+    VALUES (${turf_id}, ${start_time}, ${end_time}, ${priceNum})
+    RETURNING id, turf_id, start_time, end_time, price
+  `;
+  return NextResponse.json(inserted[0], { status: 201 });
 }

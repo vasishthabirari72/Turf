@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import sql from '@/lib/db';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const locality = searchParams.get('locality');
   const sport = searchParams.get('sport');
 
-  let query = 'SELECT * FROM player_requests WHERE 1=1';
-  const params: string[] = [];
-  if (locality) {
-    query += ' AND locality = ?';
-    params.push(locality);
-  }
-  if (sport) {
-    query += ' AND sport = ?';
-    params.push(sport);
-  }
-  query += ' ORDER BY date ASC, time ASC';
+  const rows = await sql<Record<string, unknown>[]>`
+    SELECT * FROM player_requests
+     WHERE TRUE
+       ${locality ? sql`AND locality = ${locality}` : sql``}
+       ${sport ? sql`AND sport = ${sport}` : sql``}
+     ORDER BY date ASC, time ASC
+  `;
 
-  const rows = db.prepare(query).all(...params) as Record<string, unknown>[];
   const requests = rows.map((r) => ({
     ...r,
     players_joined: JSON.parse(r.players_joined as string),
@@ -43,15 +38,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  const stmt = db.prepare(`
+  const inserted = await sql<Record<string, unknown>[]>`
     INSERT INTO player_requests (creator_name, sport, locality, date, time, players_needed, players_joined, pending_joiners, status)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', 'open')
-  `);
-  const result = stmt.run(creator_name, sport, locality, date, time, players_needed);
-  const row = db.prepare('SELECT * FROM player_requests WHERE id = ?').get(result.lastInsertRowid) as Record<
-    string,
-    unknown
-  >;
+    VALUES (${creator_name}, ${sport}, ${locality}, ${date}, ${time}, ${players_needed}, '[]', '[]', 'open')
+    RETURNING *
+  `;
+  const row = inserted[0];
+
   return NextResponse.json(
     {
       ...row,

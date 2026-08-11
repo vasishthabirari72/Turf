@@ -4,14 +4,27 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 // ---------------------------------------------------------------------------
-// LOCAL DEMO UPLOADS — writes straight to public/turf-photos on this machine.
-// There is no object storage here on purpose.
+// !! KNOWN BROKEN ON VERCEL — READ THIS BEFORE DEPLOYING !!
 //
-// TODO before this is used anywhere real: move to S3/Cloudinary/UploadThing.
-// Writing into public/ only works because the app runs from a normal disk; on a
-// serverless host the filesystem is read-only (and per-instance), so uploads
-// would fail or vanish — the same constraint that keeps the SQLite database
-// local. See the deployment note in README.md.
+// This route writes uploaded files to public/turf-photos on the local disk.
+// The database was moved to hosted Postgres precisely because a local file
+// cannot work on a serverless host; THIS ROUTE STILL HAS THAT EXACT PROBLEM and
+// was deliberately left as-is rather than silently half-fixed.
+//
+// What happens on Vercel: the filesystem is read-only apart from /tmp, so
+// writeFile below throws and the owner sees "Could not save that photo".
+// Even if it were pointed at /tmp, that directory is per-instance and wiped, so
+// the file would not be servable at /turf-photos/... afterwards.
+//
+// What still works on Vercel: everything else. Turfs without a photo fall back
+// to the emoji, and the three committed seed-*.svg files are part of the build
+// output, so seeded turfs keep their pictures. Only *new* uploads fail.
+//
+// TODO: move to object storage (Vercel Blob is the smallest change here —
+// `put()` returns a public URL; Cloudinary or UploadThing work too). The route
+// keeps its shape: validate, store, return { url }. The turfs API already
+// restricts photo_url to a path we produced, so that check needs widening to
+// the storage host at the same time.
 // ---------------------------------------------------------------------------
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
