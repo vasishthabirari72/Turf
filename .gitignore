@@ -47,9 +47,13 @@ next-env.d.ts
 # illustrations that ship with the repo are deliberately not ignored.
 /public/turf-photos/upload-*
 
-# local sqlite database — src/lib/db.ts creates and seeds this on first run,
-# so a fresh clone builds its own with dates relative to today. The -wal/-shm
-# files are transient SQLite journals and must never be committed.
+# Leftover SQLite files from before the move to Postgres. Nothing writes these
+# any more, but an old working copy may still have them — keep them out of git.
 turf.db
 turf.db-shm
 turf.db-wal
+
+# Neon CLI agent-skill docs, downloaded on demand. Same reasoning as
+# node_modules: the lockfile (skills-lock.json) is committed, the fetched
+# content is not.
+/.agents/
