@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import SessionNavLink from "./SessionNavLink";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -50,16 +51,9 @@ export default function RootLayout({
                 <span className="md:hidden">Players</span>
                 <span className="hidden md:inline">Find Players</span>
               </Link>
-              {/* Icon-only below md: a fourth text label does not fit a 375px bar,
-                  and the aria-label keeps it announced properly either way. */}
-              <Link
-                href="/profile"
-                aria-label="Your profile"
-                className="px-1.5 md:px-3 py-2 rounded-md hover:bg-black/5 tap-target flex items-center whitespace-nowrap"
-              >
-                <span className="md:hidden text-base leading-none" aria-hidden="true">👤</span>
-                <span className="hidden md:inline">Profile</span>
-              </Link>
+              {/* Identity slot: "Sign in" when signed out, "Profile" when signed in.
+                  Icon-only below md — a fourth text label does not fit a 375px bar. */}
+              <SessionNavLink />
               <Link
                 href="/owner"
                 className="ml-0.5 md:ml-2 px-2 md:px-4 py-2 rounded-md tap-target flex items-center font-semibold whitespace-nowrap"

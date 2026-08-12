@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getName, signIn as sessionSignIn, signOut as sessionSignOut } from "@/lib/session";
 
 interface Turf {
   id: number;
@@ -27,7 +28,7 @@ export default function OwnerDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("owner_name");
+    const saved = getName();
     if (saved) {
       setOwnerName(saved);
       setNameInput(saved);
@@ -49,7 +50,7 @@ export default function OwnerDashboard() {
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     if (!nameInput.trim()) return;
-    localStorage.setItem("owner_name", nameInput.trim());
+    sessionSignIn(nameInput.trim());
     setOwnerName(nameInput.trim());
   }
 
@@ -149,6 +150,14 @@ export default function OwnerDashboard() {
         <div>
           <div className="text-sm" style={{ color: "var(--ink-soft)" }}>Welcome back,</div>
           <h1 className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>{ownerName}</h1>
+          <button
+            type="button"
+            onClick={() => { sessionSignOut(); setOwnerName(""); setNameInput(""); }}
+            className="tap-target text-base font-semibold underline -ml-1 px-1"
+            style={{ color: "var(--danger)" }}
+          >
+            Sign out
+          </button>
         </div>
         <button
           onClick={() => setShowForm((s) => !s)}

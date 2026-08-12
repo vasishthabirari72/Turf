@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signIn as sessionSignIn, signOut as sessionSignOut } from "@/lib/session";
 
 const ROLES = [
   { key: "player", label: "I play" },
@@ -15,6 +17,7 @@ interface SavedUser {
 }
 
 export default function Profile() {
+  const router = useRouter();
   // Same localStorage key the rest of the app uses to identify someone.
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -85,8 +88,9 @@ export default function Profile() {
       setError(data.error || "Could not save your details.");
       return;
     }
-    // Keep the shared key in step so booking and find-players see the same name.
-    localStorage.setItem("player_name", name.trim());
+    // Saving a name is also signing in under it; this keeps the consumer and
+    // owner keys in step so one person is not two identities.
+    sessionSignIn(name.trim());
     setSaved(true);
   }
 
@@ -226,6 +230,22 @@ export default function Profile() {
           {saving ? "Saving…" : "Save details"}
         </button>
       </form>
+
+      <div className="mt-5 rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Signed in as {name || "nobody"}</div>
+        <div className="text-base mt-1 mb-4" style={{ color: "var(--ink-soft)" }}>
+          Signing out clears your name from this device. Your bookings and games
+          stay where they are — sign back in with the same name to see them.
+        </div>
+        <button
+          type="button"
+          onClick={() => { sessionSignOut(); router.push("/login"); }}
+          className="tap-target px-5 py-3 rounded-lg text-base font-semibold border"
+          style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "var(--paper)" }}
+        >
+          Sign out
+        </button>
+      </div>
 
       <div className="mt-5 rounded-lg p-4 text-base leading-relaxed" style={{ background: "white", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
         There is no password and no sign-up here. Your name is how the app knows
