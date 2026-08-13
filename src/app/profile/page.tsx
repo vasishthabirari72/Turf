@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn as sessionSignIn, signOut as sessionSignOut } from "@/lib/session";
+import { getShows, setShows, signIn as sessionSignIn, signOut as sessionSignOut, type Shows } from "@/lib/session";
 
 const ROLES = [
   { key: "player", label: "I play" },
@@ -27,6 +27,8 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which links to lead with. Display only — see the note in lib/session.ts.
+  const [shows, setShowsState] = useState<Shows | null>(null);
 
   // Distinguishes "nothing saved yet" from "we couldn't reach the server".
   // Those look identical on screen otherwise — a blank form — and the second
@@ -53,6 +55,7 @@ export default function Profile() {
         setPhone(user.phone || "");
         if (user.role) setRole(user.role);
       }
+      setShowsState(getShows());
       setLoadFailed(!ok);
       setLoading(false);
     });
@@ -230,6 +233,40 @@ export default function Profile() {
           {saving ? "Saving…" : "Save details"}
         </button>
       </form>
+
+      {/* A menu preference, nothing more. Deliberately worded so it cannot be
+          mistaken for a permission: every page stays open either way. */}
+      <div className="mt-5 rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Show me</div>
+        <div className="text-base mt-1 mb-4" style={{ color: "var(--ink-soft)" }}>
+          Changes what your menu puts first. Nothing is hidden from you — you can
+          open any part of the app whichever you pick.
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { key: "player" as const, label: "Places to play" },
+            { key: "owner" as const, label: "My turf" },
+          ]).map((opt) => {
+            const active = shows === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => { setShows(opt.key); setShowsState(opt.key); }}
+                className="tap-target px-4 py-2.5 rounded-lg text-base font-medium border"
+                style={
+                  active
+                    ? { background: "var(--pitch)", borderColor: "var(--pitch)", color: "white" }
+                    : { background: "var(--paper)", borderColor: "var(--line)", color: "var(--ink)" }
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="mt-5 rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
         <div className="font-semibold text-base" style={{ color: "var(--pitch)" }}>Signed in as {name || "nobody"}</div>

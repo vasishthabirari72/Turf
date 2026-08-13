@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import SessionNavLink from "./SessionNavLink";
+import OwnerNavLink from "./OwnerNavLink";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -54,14 +55,9 @@ export default function RootLayout({
               {/* Identity slot: "Sign in" when signed out, "Profile" when signed in.
                   Icon-only below md — a fourth text label does not fit a 375px bar. */}
               <SessionNavLink />
-              <Link
-                href="/owner"
-                className="ml-0.5 md:ml-2 px-2 md:px-4 py-2 rounded-md tap-target flex items-center font-semibold whitespace-nowrap"
-                style={{ background: "var(--pitch)", color: "white" }}
-              >
-                <span className="md:hidden">Owner</span>
-                <span className="hidden md:inline">Owner Dashboard</span>
-              </Link>
+              {/* Prominent by default and for owners; a quiet link for someone who
+                  said they're here to play. Never removed — /owner stays open. */}
+              <OwnerNavLink />
             </nav>
           </div>
         </header>
