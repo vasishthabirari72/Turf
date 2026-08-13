@@ -17,7 +17,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { turf_id, date, start_time, action, note, acting_as } = body;
+  const { turf_id, date, start_time, action, note, acting_as, amount } = body;
+
+  // What the owner collected in cash for this slot, so a phone or walk-in
+  // booking lands in the same ledger as an app booking. Optional on purpose:
+  // blocking for maintenance or personal use has no money attached, and
+  // forcing a number would either stop the block or invent a false zero.
+  let recordedAmount: number | null = null;
+  if (amount !== undefined && amount !== null && String(amount).trim() !== '') {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n < 0) {
+      return NextResponse.json({ error: 'Amount must be a number, or left blank' }, { status: 400 });
+    }
+    recordedAmount = Math.round(n);
+  }
 
   if (!turf_id || !date || !start_time || !action) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -52,8 +65,8 @@ export async function POST(req: NextRequest) {
     }
     try {
       await sql`
-        INSERT INTO slot_overrides (turf_id, date, start_time, status, note)
-        VALUES (${turf_id}, ${date}, ${start_time}, 'manual_block', ${note || 'Blocked by owner'})
+        INSERT INTO slot_overrides (turf_id, date, start_time, status, note, price)
+        VALUES (${turf_id}, ${date}, ${start_time}, 'manual_block', ${note || 'Blocked by owner'}, ${recordedAmount})
       `;
     } catch (err) {
       // A booking landed on this slot between our SELECT and this INSERT.
@@ -62,7 +75,7 @@ export async function POST(req: NextRequest) {
       }
       throw err;
     }
-    return NextResponse.json({ ok: true, status: 'manual_block' });
+    return NextResponse.json({ ok: true, status: 'manual_block', amount: recordedAmount });
   }
 
   if (action === 'unblock') {

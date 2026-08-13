@@ -26,6 +26,9 @@ export default function OwnerDashboard() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // Today's combined take per turf, keyed by turf id. Loaded after the list so
+  // a slow figure never holds up the turfs themselves.
+  const [todayTotals, setTodayTotals] = useState<Record<number, number>>({});
 
   useEffect(() => {
     const saved = getName();
@@ -34,6 +37,24 @@ export default function OwnerDashboard() {
       setNameInput(saved);
     }
   }, []);
+
+  useEffect(() => {
+    if (!ownerName || turfs.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      turfs.map((t) =>
+        fetch(`/api/turfs/${t.id}/revenue?acting_as=${encodeURIComponent(ownerName)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => [t.id, d?.today?.total ?? 0] as const)
+          .catch(() => [t.id, 0] as const)
+      )
+    ).then((pairs) => {
+      if (!cancelled) setTodayTotals(Object.fromEntries(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerName, turfs]);
 
   useEffect(() => {
     if (!ownerName) return;
@@ -287,6 +308,9 @@ export default function OwnerDashboard() {
                     turf name and price to know which one they are opening. */}
                 <div className="font-semibold text-lg leading-snug">{t.name}</div>
                 <div className="text-base" style={{ color: "var(--ink-soft)" }}>{t.locality} · ₹{t.price_per_hour}/hr</div>
+                <div className="text-base font-semibold mt-0.5" style={{ color: "var(--turf-dark)" }}>
+                  Today: ₹{todayTotals[t.id] ?? 0}
+                </div>
               </div>
               <div className="text-base font-semibold whitespace-nowrap" style={{ color: "var(--turf-dark)" }}>Bookings →</div>
             </Link>

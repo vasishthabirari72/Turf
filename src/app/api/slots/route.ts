@@ -78,9 +78,18 @@ export async function GET(req: NextRequest) {
       note: override?.note || null,
       customer_name: override?.customer_name || null,
       payment_method: override?.payment_method || null,
-      // What this hour costs now. A booked slot keeps the price it was made at,
-      // so a later rule change never rewrites an existing booking.
-      price: override?.price ?? priceForSlot(time, rules, turf.price_per_hour),
+      // What this hour costs. An app booking keeps the price it was made at, so
+      // a later rule change never rewrites it.
+      //
+      // A manual block's stored price is what the OWNER collected in cash, and
+      // this endpoint is public — exposing it would publish their takings to
+      // anyone browsing the turf. Blocked hours therefore show the ordinary list
+      // price; the recorded amount is only returned by the ownership-checked
+      // revenue endpoint.
+      price:
+        override?.status === 'app_booking' && override.price != null
+          ? override.price
+          : priceForSlot(time, rules, turf.price_per_hour),
     });
   }
 

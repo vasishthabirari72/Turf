@@ -73,6 +73,9 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [ruleBusy, setRuleBusy] = useState(false);
   const [ruleError, setRuleError] = useState<string | null>(null);
+  // Slot awaiting a "how much did you take?" answer before it is blocked.
+  const [blocking, setBlocking] = useState<Slot | null>(null);
+  const [amount, setAmount] = useState("");
 
   const { date } = dayLabel(dayOffset);
 
@@ -174,8 +177,16 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
 
   async function toggleSlot(slot: Slot) {
     if (slot.status === "app_booking") return; // can't manually toggle real bookings here
+
+    // Releasing a slot is still a single tap. Blocking one asks how much was
+    // taken first, so a phone booking lands in the ledger instead of vanishing.
+    if (slot.status === "open") {
+      setAmount("");
+      setBlocking(slot);
+      return;
+    }
+
     setBusy(slot.time);
-    const action = slot.status === "open" ? "block" : "unblock";
     const res = await fetch("/api/slots/toggle", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -183,11 +194,35 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         turf_id: id,
         date,
         start_time: slot.time,
-        action,
-        note: "Phone / walk-in booking",
+        action: "unblock",
         acting_as: ownerName ?? "",
       }),
     });
+    if (res.ok) loadSlots();
+    setBusy(null);
+  }
+
+  async function confirmBlock(e: React.FormEvent) {
+    e.preventDefault();
+    const slot = blocking;
+    if (!slot) return;
+    setBusy(slot.time);
+    const res = await fetch("/api/slots/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        turf_id: id,
+        date,
+        start_time: slot.time,
+        action: "block",
+        note: "Phone / walk-in booking",
+        acting_as: ownerName ?? "",
+        // Blank stays blank — a slot blocked for maintenance has no money on it.
+        amount: amount.trim() === "" ? null : amount.trim(),
+      }),
+    });
+    setBlocking(null);
+    setAmount("");
     if (res.ok) loadSlots();
     setBusy(null);
   }
@@ -264,6 +299,15 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
           <div className="text-sm" style={{ color: "var(--ink-soft)" }}>{turf.locality} · ₹{turf.price_per_hour}/hr</div>
         </div>
       </div>
+
+      <Link
+        href={`/owner/turf/${id}/revenue`}
+        className="tap-target inline-flex items-center gap-2 mb-5 px-5 py-3 rounded-xl text-base font-semibold w-full"
+        style={{ background: "var(--pitch)", color: "white" }}
+      >
+        <span aria-hidden="true">🧾</span>
+        <span>Today&apos;s collection</span>
+      </Link>
 
       <button
         type="button"
@@ -464,6 +508,70 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
           </div>
         )}
       </div>
+
+      {/* One field, one tap. This sits in the middle of a phone call, so the
+          amount is optional and Enter confirms — nothing here should slow the
+          owner down or refuse to proceed. */}
+      {blocking && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+          style={{ background: "rgba(20, 32, 24, 0.55)" }}
+          onClick={() => setBlocking(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Block ${blocking.time}`}
+        >
+          <form
+            onSubmit={confirmBlock}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-5"
+            style={{ background: "var(--paper)" }}
+          >
+            <div className="font-display text-lg font-bold" style={{ color: "var(--pitch)" }}>
+              Block {blocking.time}
+            </div>
+            <div className="text-base mt-1 mb-4" style={{ color: "var(--ink-soft)" }}>
+              {dayLabel(dayOffset).label} · nobody will be able to book this hour on the app.
+            </div>
+
+            <label className="text-base font-semibold block mb-1.5" htmlFor="block-amount">
+              Amount collected <span style={{ color: "var(--ink-soft)" }}>(optional)</span>
+            </label>
+            <input
+              id="block-amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={`e.g. ${blocking.price}`}
+              inputMode="numeric"
+              autoFocus
+              className="tap-target w-full border rounded-lg px-3 py-3 text-base"
+              style={{ borderColor: "var(--line)" }}
+            />
+            <div className="text-sm mt-2" style={{ color: "var(--ink-soft)" }}>
+              Leave it blank if no money changed hands — for repairs or your own game.
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="submit"
+                disabled={busy === blocking.time}
+                className="tap-target flex-1 px-5 py-3 rounded-lg text-base font-semibold text-white disabled:opacity-60"
+                style={{ background: "var(--amber)", color: "var(--pitch)" }}
+              >
+                {busy === blocking.time ? "Blocking…" : "Block slot"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlocking(null)}
+                className="tap-target px-5 py-3 rounded-lg text-base font-semibold border"
+                style={{ borderColor: "var(--line)", color: "var(--ink)", background: "var(--paper)" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
