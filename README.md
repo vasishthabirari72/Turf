@@ -60,6 +60,20 @@ running DDL on every cold start and trying to reseed live data on every deploy.
 These get added once you've validated real demand with owners (see the roadmap docs for
 what production would add).
 
+## Contact sharing on a game
+
+Approving a joiner used to be the end of the flow — nothing was handed over, so
+no game could actually be arranged. `GET /api/requests/[id]/contacts` now returns
+phone numbers, narrowly:
+
+- the game's creator sees the **approved** joiners;
+- an approved joiner sees the **creator**, and nobody else on the game.
+
+Someone still pending sees nothing; approval is what unlocks it, in both
+directions. Anyone else is refused outright rather than handed an empty list, so
+the endpoint cannot be used to test whether a name is on a game, and no phone
+number appears anywhere on the public games listing.
+
 ## How sign-in works, and what it does not cover
 
 Accounts are a **name and a password**. Passwords are hashed with bcrypt (cost 12) and the

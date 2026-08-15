@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useMe } from "@/lib/useSession";
 import { includesName, sameName } from "@/lib/names";
 
+interface Contact {
+  name: string;
+  phone: string | null;
+}
+
 interface PlayerRequest {
   id: number;
   creator_name: string;
@@ -40,6 +45,9 @@ export default function FindPlayers() {
   const [respondingKey, setRespondingKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Contacts, per game, fetched on demand. Not folded into the games list
+  // because that list is public and these numbers are not.
+  const [contacts, setContacts] = useState<Record<number, Contact[] | "loading" | "error">>({});
 
   function load() {
     // Without this flag the empty state renders while the fetch is still in
@@ -78,6 +86,17 @@ export default function FindPlayers() {
     } else {
       const data = await res.json().catch(() => null);
       setToast(data?.error || "Could not post that game.");
+    }
+  }
+
+  async function loadContacts(reqId: number) {
+    setContacts((c) => ({ ...c, [reqId]: "loading" }));
+    try {
+      const r = await fetch(`/api/requests/${reqId}/contacts`, { cache: "no-store" });
+      const d = await r.json().catch(() => null);
+      setContacts((c) => ({ ...c, [reqId]: r.ok ? (d.contacts ?? []) : "error" }));
+    } catch {
+      setContacts((c) => ({ ...c, [reqId]: "error" }));
     }
   }
 
@@ -258,6 +277,67 @@ export default function FindPlayers() {
                   {req.players_joined.length > 0 && (
                     <div className="text-xs mt-1.5" style={{ color: "var(--turf-dark)" }}>
                       Joined: {req.players_joined.join(", ")}
+                    </div>
+                  )}
+
+                  {/* The point of approving someone: a way to actually reach
+                      them. Only shown to people in the game, and only once
+                      approval has happened — the server enforces both. */}
+                  {((isCreator && req.players_joined.length > 0) || isJoined) && (
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
+                      {contacts[req.id] === undefined ? (
+                        <button
+                          type="button"
+                          onClick={() => loadContacts(req.id)}
+                          className="tap-target text-sm font-semibold underline -ml-1 px-1"
+                          style={{ color: "var(--turf-dark)" }}
+                        >
+                          {isCreator ? "Show players' numbers" : `Show ${req.creator_name}'s number`}
+                        </button>
+                      ) : contacts[req.id] === "loading" ? (
+                        <div className="text-sm" style={{ color: "var(--ink-soft)" }}>Loading…</div>
+                      ) : contacts[req.id] === "error" ? (
+                        <div className="text-sm" style={{ color: "var(--danger)" }}>
+                          Couldn&apos;t load contact details.{" "}
+                          <button type="button" onClick={() => loadContacts(req.id)} className="underline font-semibold">
+                            Try again
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="text-xs font-semibold" style={{ color: "var(--ink-soft)" }}>
+                            {isCreator ? "Who's playing" : "Organiser"}
+                          </div>
+                          {(contacts[req.id] as Contact[]).map((c) => (
+                            <div key={c.name} className="flex items-center justify-between gap-3 text-sm">
+                              <span className="font-medium">{c.name}</span>
+                              {c.phone ? (
+                                // tel: so a tap dials straight from a phone.
+                                <a
+                                  href={`tel:${c.phone.replace(/\s+/g, "")}`}
+                                  className="tap-target font-semibold whitespace-nowrap"
+                                  style={{ color: "var(--turf-dark)" }}
+                                >
+                                  📞 {c.phone}
+                                </a>
+                              ) : (
+                                <span className="text-xs whitespace-nowrap" style={{ color: "var(--ink-soft)" }}>
+                                  no number saved
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                          {(contacts[req.id] as Contact[]).some((c) => !c.phone) && (
+                            <div className="text-xs mt-1" style={{ color: "var(--ink-soft)" }}>
+                              Anyone without a number can add one on their{" "}
+                              <Link href="/profile" className="underline font-medium" style={{ color: "var(--turf-dark)" }}>
+                                profile
+                              </Link>
+                              .
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
