@@ -29,6 +29,9 @@ export default function OwnerDashboard() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // Shown after a turf is created when only its photo failed. Separate from
+  // formError, which means "nothing was saved".
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   // Today's combined take per turf, keyed by turf id. Loaded after the list so
   // a slow figure never holds up the turfs themselves.
   const [todayTotals, setTodayTotals] = useState<Record<number, number>>({});
@@ -80,20 +83,24 @@ export default function OwnerDashboard() {
     setFormError(null);
     const form = new FormData(e.currentTarget);
 
-    // Upload first: if the photo fails we stop here rather than creating a turf
-    // that silently has no picture.
+    // The photo is the optional part, so a failed upload must not cost the
+    // owner the turf. This used to return early: an owner who picked a photo
+    // and hit a storage problem ended up with nothing listed at all, on the one
+    // screen where giving up is most expensive. Now the turf is created either
+    // way and the photo is reported afterwards as the thing that didn't work.
     let photoUrl: string | null = null;
+    let photoFailed: string | null = null;
     if (photoFile) {
-      const fd = new FormData();
-      fd.append("file", photoFile);
-      const up = await fetch("/api/upload", { method: "POST", body: fd });
-      const upData = await up.json();
-      if (!up.ok) {
-        setFormError(upData.error || "Could not upload that photo.");
-        setLoading(false);
-        return;
+      try {
+        const fd = new FormData();
+        fd.append("file", photoFile);
+        const up = await fetch("/api/upload", { method: "POST", body: fd });
+        const upData = await up.json().catch(() => null);
+        if (up.ok) photoUrl = upData.url;
+        else photoFailed = upData?.error || "Could not upload that photo.";
+      } catch {
+        photoFailed = "Could not upload that photo.";
       }
-      photoUrl = upData.url;
     }
 
     const payload = {
@@ -120,6 +127,10 @@ export default function OwnerDashboard() {
     setPhotoFile(null);
     setPhotoPreview(null);
     setLoading(false);
+    // Said plainly and after the fact: the turf is listed, the picture is not.
+    setPhotoNotice(
+      photoFailed ? `${newTurf.name} is listed, but the photo didn't upload. You can add one later — it shows a ${newTurf.photo_emoji} icon until then.` : null
+    );
   }
 
   // Reaching here without an owner session means proxy.ts is mid-redirect, so
@@ -241,6 +252,24 @@ export default function OwnerDashboard() {
             </button>
           </div>
         </form>
+      )}
+
+      {photoNotice && (
+        <div
+          role="status"
+          className="mb-6 rounded-lg p-4 text-base leading-relaxed flex items-start justify-between gap-3"
+          style={{ background: "var(--manual-bg)", border: "1px solid var(--amber)", color: "var(--ink)" }}
+        >
+          <span>{photoNotice}</span>
+          <button
+            type="button"
+            onClick={() => setPhotoNotice(null)}
+            aria-label="Dismiss"
+            className="tap-target px-2 font-semibold shrink-0"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {turfsLoading ? (

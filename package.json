@@ -11,6 +11,7 @@
     "seed": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/seed.ts"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "iron-session": "^8.0.4",
     "next": "16.2.12",

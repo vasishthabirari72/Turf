@@ -113,13 +113,18 @@ The database is hosted Postgres, so the app runs on serverless now.
    Production, Preview and Development.
 4. Deploy.
 
-**One thing is still broken on Vercel: photo uploads.** `src/app/api/upload/route.ts`
-writes to `public/turf-photos` on local disk, which is exactly the constraint that forced
-the database off SQLite — a serverless filesystem is read-only. Uploading a photo on a
-deployed build fails with "Could not save that photo". Everything else works: turfs with
-no photo fall back to their emoji, and the committed `seed-*.svg` files ship with the
-build so seeded turfs keep their pictures. Fixing it means object storage (Vercel Blob is
-the smallest change); there is a TODO at the top of that route with the details.
+**Photo uploads need a Blob store.** `src/app/api/upload/route.ts` writes to Vercel Blob,
+so `BLOB_READ_WRITE_TOKEN` has to be set — `vercel blob create-store <name> --access public
+--yes` creates one and links it to the project. Without the token the route falls back to
+writing `public/turf-photos` on local disk, which works when developing and cannot work on
+a serverless host (the filesystem is read-only). That fallback is why uploads used to fail
+on deploys with "Could not save that photo".
+
+A failed upload no longer costs the owner the turf: the turf is created without a picture
+and the owner is told the photo specifically didn't upload. `photo_url` is still restricted
+to somewhere we put it — a `/turf-photos/` path or an object in our own blob store, matched
+by parsing the URL rather than pattern-matching the string, so a host that merely *mentions*
+the blob domain is rejected.
 
 ## Project structure
 

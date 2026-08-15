@@ -2,32 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { put } from '@vercel/blob';
 import { requireOwner } from '@/lib/auth';
 
-// ---------------------------------------------------------------------------
-// !! KNOWN BROKEN ON VERCEL — READ THIS BEFORE DEPLOYING !!
+// Turf photos go to Vercel Blob, which is object storage that outlives the
+// request. This route used to write to public/turf-photos on the local disk,
+// which cannot work on a serverless host: the filesystem is read-only apart
+// from /tmp, and /tmp is per-instance and wiped, so the file would not be
+// servable afterwards even if the write succeeded. In production that meant an
+// owner who picked a photo could not list their turf at all.
 //
-// This route writes uploaded files to public/turf-photos on the local disk.
-// The database was moved to hosted Postgres precisely because a local file
-// cannot work on a serverless host; THIS ROUTE STILL HAS THAT EXACT PROBLEM and
-// was deliberately left as-is rather than silently half-fixed.
-//
-// What happens on Vercel: the filesystem is read-only apart from /tmp, so
-// writeFile below throws and the owner sees "Could not save that photo".
-// Even if it were pointed at /tmp, that directory is per-instance and wiped, so
-// the file would not be servable at /turf-photos/... afterwards.
-//
-// What still works on Vercel: everything else. Turfs without a photo fall back
-// to the emoji, and the three committed seed-*.svg files are part of the build
-// output, so seeded turfs keep their pictures. Only *new* uploads fail.
-//
-// TODO: move to object storage (Vercel Blob is the smallest change here —
-// `put()` returns a public URL; Cloudinary or UploadThing work too). The route
-// keeps its shape: validate, store, return { url }. The turfs API already
-// restricts photo_url to a path we produced, so that check needs widening to
-// the storage host at the same time.
-// ---------------------------------------------------------------------------
-
+// The disk path is kept only as a fallback for running without a blob token
+// (a fresh clone, or offline). Anything deployed has the token, so anything
+// deployed uses Blob.
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 // Raster formats only. SVG is deliberately excluded: it can carry <script>, and
@@ -78,16 +65,30 @@ export async function POST(req: NextRequest) {
   }
 
   // The client's filename is never used — it is attacker-controlled and could
-  // contain path separators or "..". We generate our own, so the write can only
-  // ever land inside UPLOAD_DIR.
+  // contain path separators or "..". We generate our own, so the stored object
+  // can only ever land where we intend.
   const filename = `upload-${randomUUID()}${ext}`;
 
   try {
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const blob = await put(`turf-photos/${filename}`, file, {
+        access: 'public',
+        // The name is already a UUID, so a suffix would only make the URL
+        // harder to read; addRandomSuffix would also make the stored path
+        // differ from the one we asked for.
+        addRandomSuffix: false,
+        // Photos are immutable once written — a new upload gets a new name.
+        cacheControlMaxAge: 31536000,
+        contentType: file.type,
+      });
+      return NextResponse.json({ url: blob.url }, { status: 201 });
+    }
+
+    // No token: local disk, which only works when there is a real filesystem.
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(await file.arrayBuffer()));
+    return NextResponse.json({ url: `/turf-photos/${filename}` }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Could not save that photo. Please try again.' }, { status: 500 });
   }
-
-  return NextResponse.json({ url: `/turf-photos/${filename}` }, { status: 201 });
 }

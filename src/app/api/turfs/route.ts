@@ -2,6 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { getCurrentUser, requireOwner } from '@/lib/auth';
 
+/**
+ * A photo_url the upload route could plausibly have produced.
+ *
+ * Two shapes are allowed and nothing else:
+ *   /turf-photos/<name>                       (local disk, and the seed SVGs)
+ *   https://<id>.public.blob.vercel-storage.com/turf-photos/<name>
+ *
+ * The hostname is compared after parsing, so a URL that merely *contains* the
+ * blob host somewhere in its path or fragment does not pass.
+ */
+function isOwnPhotoUrl(value: string): boolean {
+  if (/^\/turf-photos\/[A-Za-z0-9._-]+$/.test(value)) return true;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === 'https:' &&
+    url.hostname.endsWith('.public.blob.vercel-storage.com') &&
+    url.pathname.startsWith('/turf-photos/')
+  );
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const locality = searchParams.get('locality');
@@ -69,9 +95,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Only ever a path we produced. Rejecting anything else stops a caller
-  // pointing a turf's image at an arbitrary external or javascript: URL.
-  if (photo_url != null && !/^\/turf-photos\/[A-Za-z0-9._-]+$/.test(String(photo_url))) {
+  // Only ever somewhere we put it: a local /turf-photos path, or an object in
+  // our own Vercel Blob store. Rejecting anything else stops a caller pointing
+  // a turf's image at an arbitrary external host or a javascript: URL.
+  //
+  // The blob host is matched with the URL parser rather than a regex on the
+  // whole string, because "https://evil.com/#public.blob.vercel-storage.com"
+  // and friends can satisfy a careless pattern while pointing elsewhere.
+  if (photo_url != null && !isOwnPhotoUrl(String(photo_url))) {
     return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
   }
 
