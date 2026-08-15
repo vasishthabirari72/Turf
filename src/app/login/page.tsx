@@ -2,11 +2,10 @@
 
 import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { refreshSession } from "@/lib/useSession";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   // Where to go afterwards. Only same-site paths are honoured so this cannot be
   // used to bounce someone to another domain.
@@ -45,7 +44,11 @@ function LoginForm() {
     const me = await refreshSession();
     // An owner arriving with no particular destination goes to their dashboard;
     // this is a convenience, not a restriction — every page stays reachable.
-    router.push(next !== "/" ? next : me?.role === "owner" ? "/owner" : "/");
+    //
+    // Full navigation rather than router.push: see the note in signup. Links
+    // prefetched while signed out have cached proxy.ts's redirect to /login, and
+    // a client-side push would replay it.
+    window.location.assign(next !== "/" ? next : me?.role === "owner" ? "/owner" : "/");
   }
 
   return (

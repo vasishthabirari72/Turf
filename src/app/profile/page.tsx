@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { signOut as sessionSignOut, useMe } from "@/lib/useSession";
 
 interface SavedUser {
@@ -12,7 +11,6 @@ interface SavedUser {
 }
 
 export default function Profile() {
-  const router = useRouter();
   const { me, loading: meLoading } = useMe();
 
   const [phone, setPhone] = useState("");
@@ -227,7 +225,7 @@ export default function Profile() {
         </div>
         <button
           type="button"
-          onClick={async () => { await sessionSignOut(); router.push("/login"); }}
+          onClick={async () => { await sessionSignOut(); window.location.assign("/login"); }}
           className="tap-target px-5 py-3 rounded-lg text-base font-semibold border"
           style={{ borderColor: "var(--danger)", color: "var(--danger)", background: "var(--paper)" }}
         >

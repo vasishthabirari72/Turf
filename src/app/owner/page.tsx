@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMe, signOut as sessionSignOut } from "@/lib/useSession";
 
 interface Turf {
@@ -18,7 +17,6 @@ const SPORTS = ["Cricket", "Football", "Badminton", "Basketball", "Tennis"];
 const LOCALITIES = ["Andheri West", "Andheri East", "Jogeshwari", "Goregaon", "Bandra"];
 
 export default function OwnerDashboard() {
-  const router = useRouter();
   // Who this is comes from the session cookie, not from a name typed into the
   // page. proxy.ts has already turned away anyone without an owner session, and
   // every request below is re-checked server-side regardless.
@@ -145,7 +143,7 @@ export default function OwnerDashboard() {
           <h1 className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>{ownerName}</h1>
           <button
             type="button"
-            onClick={async () => { await sessionSignOut(); router.push("/login"); }}
+            onClick={async () => { await sessionSignOut(); window.location.assign("/login"); }}
             className="tap-target text-base font-semibold underline -ml-1 px-1"
             style={{ color: "var(--danger)" }}
           >

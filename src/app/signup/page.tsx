@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { refreshSession } from "@/lib/useSession";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -10,7 +9,6 @@ const MIN_PASSWORD_LENGTH = 8;
 type Role = "player" | "owner";
 
 export default function SignUp() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role | null>(null);
@@ -40,7 +38,13 @@ export default function SignUp() {
       return;
     }
     await refreshSession();
-    router.push(role === "owner" ? "/owner" : "/search");
+    // A full navigation, not router.push. The nav's Owner link is prefetched
+    // while this page is still signed out, so Next has already cached proxy.ts
+    // redirecting /owner to /login; a client-side push replays that cached
+    // redirect and bounces a brand-new owner straight back to sign-in. Signing
+    // in changes who every page is for, so discarding the router cache is right
+    // regardless. (Not reproducible in dev: prefetching is off there.)
+    window.location.assign(role === "owner" ? "/owner" : "/search");
   }
 
   return (
