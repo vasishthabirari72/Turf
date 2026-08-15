@@ -7,6 +7,15 @@ export async function GET(req: NextRequest) {
   const locality = searchParams.get('locality');
   const sport = searchParams.get('sport');
 
+  // Free-text search across the fields someone would actually type: the turf's
+  // name, its area, and the sport. Matched here rather than in the browser so
+  // it searches every turf, not only the ones already on screen.
+  //
+  // ILIKE is case-insensitive, and the wildcards in the value are escaped so a
+  // literal % or _ in a search is treated as text rather than as a pattern.
+  const q = (searchParams.get('q') || '').trim();
+  const pattern = q ? `%${q.replace(/([\\%_])/g, '\\$1')}%` : null;
+
   // "Mine" means the signed-in owner's, decided here rather than by an
   // owner_name the caller supplies. The browsing filters below stay open: the
   // list of turfs is public, it is who you are that is not up for negotiation.
@@ -25,6 +34,11 @@ export async function GET(req: NextRequest) {
        ${locality ? sql`AND locality = ${locality}` : sql``}
        ${sport ? sql`AND sport = ${sport}` : sql``}
        ${ownerName ? sql`AND LOWER(TRIM(owner_name)) = LOWER(TRIM(${ownerName}))` : sql``}
+       ${pattern
+         ? sql`AND (name ILIKE ${pattern} ESCAPE '\'
+                 OR locality ILIKE ${pattern} ESCAPE '\'
+                 OR sport ILIKE ${pattern} ESCAPE '\')`
+         : sql``}
      ORDER BY id DESC
   `;
   return NextResponse.json(turfs);

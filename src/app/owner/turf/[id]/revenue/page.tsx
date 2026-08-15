@@ -14,10 +14,15 @@ interface Day {
   notRecorded: number;
   total: number;
 }
+interface Period extends Day {
+  label: string;
+}
 interface Revenue {
   turf: { id: number; name: string };
   today: Day;
   days: Day[];
+  month: Period;
+  year: Period;
 }
 
 function dayLabel(date: string) {
@@ -111,7 +116,7 @@ export default function Collection({ params }: { params: Promise<{ id: string }>
       </Link>
 
       <h1 className="font-display text-2xl font-bold mt-3" style={{ color: "var(--pitch)" }}>
-        Today&apos;s collection
+        Your collection
       </h1>
       <div className="text-base mb-5" style={{ color: "var(--ink-soft)" }}>
         {data!.turf.name}
@@ -119,6 +124,9 @@ export default function Collection({ params }: { params: Promise<{ id: string }>
 
       {/* Today, big and first — it is the number an owner checks at closing. */}
       <div className="rounded-xl p-5" style={{ background: "white", border: "1px solid var(--line)" }}>
+        <div className="text-sm font-semibold mb-1" style={{ color: "var(--ink-soft)" }}>
+          Today&apos;s collection
+        </div>
         <div className="font-display text-4xl font-bold" style={{ color: "var(--pitch)" }}>
           ₹{t.total}
         </div>
@@ -154,6 +162,36 @@ export default function Collection({ params }: { params: Promise<{ id: string }>
             will show up here.
           </div>
         )}
+      </div>
+
+      {/* Month and year, side by side under today. Calendar periods, not rolling
+          windows: "this month" to an owner reconciling a register means the 1st
+          onwards, not the last 30 days. */}
+      <div className="grid grid-cols-2 gap-3 mt-4">
+        {([
+          { key: "month", heading: "This month", p: data!.month },
+          { key: "year", heading: "This year", p: data!.year },
+        ]).map(({ key, heading, p }) => (
+          <div key={key} className="rounded-xl p-4" style={{ background: "white", border: "1px solid var(--line)" }}>
+            <div className="text-sm font-semibold" style={{ color: "var(--ink-soft)" }}>{heading}</div>
+            <div className="text-xs mb-1" style={{ color: "var(--ink-soft)" }}>{p.label}</div>
+            <div className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>
+              ₹{p.total}
+            </div>
+            <div className="text-sm mt-1" style={{ color: "var(--ink-soft)" }}>
+              {p.app.count + p.manual.count} booking{p.app.count + p.manual.count === 1 ? "" : "s"}
+            </div>
+            <div className="mt-2 pt-2 text-sm flex flex-col gap-1" style={{ borderTop: "1px solid var(--line)", color: "var(--ink-soft)" }}>
+              <div className="flex justify-between gap-2"><span>App</span><span className="font-semibold" style={{ color: "var(--ink)" }}>₹{p.app.total}</span></div>
+              <div className="flex justify-between gap-2"><span>Phone / walk-in</span><span className="font-semibold" style={{ color: "var(--ink)" }}>₹{p.manual.total}</span></div>
+            </div>
+            {p.notRecorded > 0 && (
+              <div className="text-xs mt-2" style={{ color: "#8a5a00" }}>
+                {p.notRecorded} with no amount recorded
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Seven days as a plain list. A chart would be harder to read and easier

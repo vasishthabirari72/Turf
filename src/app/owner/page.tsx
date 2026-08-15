@@ -265,25 +265,41 @@ export default function OwnerDashboard() {
         <div className="grid sm:grid-cols-2 gap-4">
           {/* min-w-0 on each card lets the grid item shrink below its content width;
               without it the card keeps its intrinsic width and truncate never fires. */}
+          {/* Two destinations per turf, so the money is reachable from the front
+              screen instead of only from inside the calendar. The card is a
+              container rather than one big link, because a link cannot contain
+              another link. */}
           {turfs.map((t) => (
-            <Link
+            <div
               key={t.id}
-              href={`/owner/turf/${t.id}`}
-              className="bg-white rounded-xl border p-5 flex items-center gap-4 min-w-0 hover:shadow-md transition-shadow"
+              className="bg-white rounded-xl border min-w-0 overflow-hidden"
               style={{ borderColor: "var(--line)" }}
             >
-              <div className="text-3xl shrink-0">{t.photo_emoji}</div>
-              <div className="flex-1 min-w-0">
-                {/* Wraps rather than truncates — an owner needs to read the whole
-                    turf name and price to know which one they are opening. */}
-                <div className="font-semibold text-lg leading-snug">{t.name}</div>
-                <div className="text-base" style={{ color: "var(--ink-soft)" }}>{t.locality} · ₹{t.price_per_hour}/hr</div>
-                <div className="text-base font-semibold mt-0.5" style={{ color: "var(--turf-dark)" }}>
-                  Today: ₹{todayTotals[t.id] ?? 0}
+              <Link
+                href={`/owner/turf/${t.id}`}
+                className="p-5 flex items-center gap-4 min-w-0 hover:bg-black/2 transition-colors"
+              >
+                <div className="text-3xl shrink-0">{t.photo_emoji}</div>
+                <div className="flex-1 min-w-0">
+                  {/* Wraps rather than truncates — an owner needs to read the whole
+                      turf name and price to know which one they are opening. */}
+                  <div className="font-semibold text-lg leading-snug">{t.name}</div>
+                  <div className="text-base" style={{ color: "var(--ink-soft)" }}>{t.locality} · ₹{t.price_per_hour}/hr</div>
+                  <div className="text-base font-semibold mt-0.5" style={{ color: "var(--turf-dark)" }}>
+                    Today: ₹{todayTotals[t.id] ?? 0}
+                  </div>
                 </div>
-              </div>
-              <div className="text-base font-semibold whitespace-nowrap" style={{ color: "var(--turf-dark)" }}>Bookings →</div>
-            </Link>
+                <div className="text-base font-semibold whitespace-nowrap" style={{ color: "var(--turf-dark)" }}>Bookings →</div>
+              </Link>
+              <Link
+                href={`/owner/turf/${t.id}/revenue`}
+                className="tap-target flex items-center justify-between gap-2 px-5 py-3 text-base font-semibold"
+                style={{ borderTop: "1px solid var(--line)", background: "var(--paper)", color: "var(--pitch)" }}
+              >
+                <span>🧾 Collection — today, month &amp; year</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
           ))}
         </div>
       )}
