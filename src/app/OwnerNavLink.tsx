@@ -1,31 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getShows, onSessionChange } from "@/lib/session";
+import { useMe } from "@/lib/useSession";
 
 /**
  * The owner entry in the nav.
  *
- * Someone who said they're looking to play gets it as a quiet text link rather
- * than the filled button — still there, still one tap, just not shouting. It is
- * never removed and never disabled: /owner works exactly the same for them.
+ * Prominent for an owner account, a quiet text link for everyone else. Unlike
+ * the display-preference version this replaces, the distinction now follows the
+ * account's real role — and the owner screens genuinely do turn a player away,
+ * so the link stays honest about where it leads.
  *
  * The markup and padding are identical in both states so the bar's width does
  * not move; only the colours change.
  */
 export default function OwnerNavLink() {
-  // Server render and first client render must match, so start neutral (the
-  // prominent style, which is also what someone with no preference sees).
-  const [shows, setShows] = useState<string | null>(null);
+  const { me, loading } = useMe();
 
-  useEffect(() => {
-    const sync = () => setShows(getShows());
-    Promise.resolve().then(sync);
-    return onSessionChange(sync);
-  }, []);
-
-  const quiet = shows === "player";
+  // Quiet for anyone who is not signed in as an owner. While the answer is
+  // still loading it stays quiet too, so the prominent style never flashes at
+  // someone who will not be able to use it.
+  const quiet = loading || me?.role !== "owner";
 
   return (
     <Link

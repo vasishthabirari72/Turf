@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { sameName } from "@/lib/names";
+import { useMe } from "@/lib/useSession";
 
 interface Slot {
   time: string;
@@ -67,8 +68,11 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   const [slots, setSlots] = useState<Slot[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(false);
-  // null while we read localStorage; "" means nobody is signed in.
-  const [ownerName, setOwnerName] = useState<string | null>(null);
+  // null while the session is still being fetched; "" means nobody is signed in.
+  // The lock screen below is a courtesy so the page explains itself -- the API
+  // refuses every action here on its own, whatever this renders.
+  const { me, loading: meLoading } = useMe();
+  const ownerName = meLoading ? null : me?.name ?? "";
   const gridRef = useRef<HTMLDivElement>(null);
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [ruleBusy, setRuleBusy] = useState(false);
@@ -103,15 +107,9 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
   }, [id, date]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("owner_name") || "";
-    // Both land together, so there's no render where the turf is known but the
-    // signed-in owner isn't (which would briefly fail the ownership check).
     fetch(`/api/turfs/${id}`)
       .then((r) => r.json())
-      .then((data) => {
-        setTurf(data);
-        setOwnerName(saved);
-      });
+      .then((data) => setTurf(data));
   }, [id]);
 
   useEffect(() => {
@@ -143,7 +141,6 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         start_time: form.get("start_time"),
         end_time: form.get("end_time"),
         price: Number(form.get("price")),
-        acting_as: ownerName ?? "",
       }),
     });
     const data = await res.json();
@@ -163,7 +160,6 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
     const res = await fetch(`/api/pricing/${ruleId}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ acting_as: ownerName ?? "" }),
     });
     setRuleBusy(false);
     if (!res.ok) {
@@ -195,7 +191,6 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         date,
         start_time: slot.time,
         action: "unblock",
-        acting_as: ownerName ?? "",
       }),
     });
     if (res.ok) loadSlots();
@@ -216,7 +211,6 @@ export default function OwnerTurfCalendar({ params }: { params: Promise<{ id: st
         start_time: slot.time,
         action: "block",
         note: "Phone / walk-in booking",
-        acting_as: ownerName ?? "",
         // Blank stays blank — a slot blocked for maintenance has no money on it.
         amount: amount.trim() === "" ? null : amount.trim(),
       }),

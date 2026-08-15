@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useMe } from "@/lib/useSession";
 import { includesName, sameName } from "@/lib/names";
 
 interface PlayerRequest {
@@ -28,18 +30,16 @@ function formatDate(d: string) {
 }
 
 export default function FindPlayers() {
+  // Your name is whoever the session says you are. It used to be a free-text
+  // box saved to localStorage, which meant anyone could post or join as anyone.
+  const { me } = useMe();
+  const name = me?.name ?? "";
   const [requests, setRequests] = useState<PlayerRequest[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [respondingKey, setRespondingKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  function saveName(value: string) {
-    setName(value);
-    localStorage.setItem("player_name", value.trim());
-  }
 
   function load() {
     // Without this flag the empty state renders while the fetch is still in
@@ -54,18 +54,13 @@ export default function FindPlayers() {
 
   useEffect(() => {
     load();
-    const saved = localStorage.getItem("player_name");
-    if (saved) setName(saved);
   }, []);
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
-    const creatorName = (form.get("creator_name") as string).trim();
-    localStorage.setItem("player_name", creatorName);
-    setName(creatorName);
+    // creator_name is not sent: the server records the session's name.
     const payload = {
-      creator_name: creatorName,
       sport: form.get("sport"),
       locality: form.get("locality"),
       date: form.get("date"),
@@ -80,19 +75,21 @@ export default function FindPlayers() {
     if (res.ok) {
       setShowForm(false);
       load();
+    } else {
+      const data = await res.json().catch(() => null);
+      setToast(data?.error || "Could not post that game.");
     }
   }
 
   async function handleJoin(req: PlayerRequest) {
-    if (!name.trim()) {
-      setToast("Enter your name first, then tap Request to join again.");
+    if (!name) {
+      setToast("Please sign in first, then tap Request to join again.");
       return;
     }
     setJoiningId(req.id);
     const res = await fetch(`/api/requests/${req.id}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ player_name: name.trim() }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -109,7 +106,7 @@ export default function FindPlayers() {
     const res = await fetch(`/api/requests/${req.id}/respond`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ player_name: player, action, acting_as: name.trim() }),
+      body: JSON.stringify({ player_name: player, action }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -139,21 +136,34 @@ export default function FindPlayers() {
         </button>
       </div>
 
+      {/* Not a text box any more: you act as the account you signed in with, so
+          a game cannot be posted or joined in someone else's name. */}
       <div className="mt-4 flex items-center gap-2 flex-wrap">
-        <label htmlFor="player-name" className="text-sm font-medium whitespace-nowrap" style={{ color: "var(--ink-soft)" }}>
+        <span className="text-sm font-medium whitespace-nowrap" style={{ color: "var(--ink-soft)" }}>
           You are
-        </label>
-        <input
-          id="player-name"
-          value={name}
-          onChange={(e) => saveName(e.target.value)}
-          placeholder="your name"
-          className="tap-target border rounded-lg px-3 py-2 text-sm flex-1 min-w-40 sm:flex-none sm:w-56"
-          style={{ borderColor: "var(--line)", background: "var(--paper)" }}
-        />
-        <span className="text-xs" style={{ color: "var(--ink-soft)" }}>
-          Approve requests on games you posted.
         </span>
+        {name ? (
+          <>
+            <span
+              id="player-name"
+              className="text-sm font-semibold rounded-lg px-3 py-2"
+              style={{ background: "var(--paper)", border: "1px solid var(--line)" }}
+            >
+              {name}
+            </span>
+            <span className="text-xs" style={{ color: "var(--ink-soft)" }}>
+              Approve requests on games you posted.
+            </span>
+          </>
+        ) : (
+          <Link
+            href="/login?next=/players"
+            className="tap-target text-sm font-semibold underline"
+            style={{ color: "var(--turf-dark)" }}
+          >
+            Sign in to post or join a game
+          </Link>
+        )}
       </div>
 
       {toast && (
@@ -165,9 +175,13 @@ export default function FindPlayers() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl border p-5 mt-5 grid sm:grid-cols-2 gap-4" style={{ borderColor: "var(--line)" }}>
+          {/* The game is posted under the signed-in account, so there is
+              nothing to type or get wrong here. */}
           <div className="sm:col-span-2">
-            <label className="text-sm font-medium block mb-1">Your name</label>
-            <input name="creator_name" required defaultValue={name} className="tap-target w-full border rounded-lg px-3 py-2.5" style={{ borderColor: "var(--line)" }} placeholder="e.g. Aditya K." />
+            <div className="text-sm font-medium block mb-1">Posting as</div>
+            <div className="w-full border rounded-lg px-3 py-2.5 font-semibold" style={{ borderColor: "var(--line)", background: "var(--paper)" }}>
+              {name}
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">Sport</label>
@@ -224,7 +238,7 @@ export default function FindPlayers() {
           requests.map((req) => {
             const spotsLeft = req.players_needed - req.players_joined.length;
             const full = req.status === "full";
-            const me = name.trim();
+            const me = name;
             // Matched the same way the API matches them, so retyping your name
             // with different capitalisation doesn't hide your own approval panel
             // or offer you a join button you'd only get rejected for.

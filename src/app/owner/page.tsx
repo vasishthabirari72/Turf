@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getName, signIn as sessionSignIn, signOut as sessionSignOut } from "@/lib/session";
+import { useRouter } from "next/navigation";
+import { useMe, signOut as sessionSignOut } from "@/lib/useSession";
 
 interface Turf {
   id: number;
@@ -17,8 +18,12 @@ const SPORTS = ["Cricket", "Football", "Badminton", "Basketball", "Tennis"];
 const LOCALITIES = ["Andheri West", "Andheri East", "Jogeshwari", "Goregaon", "Bandra"];
 
 export default function OwnerDashboard() {
-  const [ownerName, setOwnerName] = useState("");
-  const [nameInput, setNameInput] = useState("");
+  const router = useRouter();
+  // Who this is comes from the session cookie, not from a name typed into the
+  // page. proxy.ts has already turned away anyone without an owner session, and
+  // every request below is re-checked server-side regardless.
+  const { me, loading: meLoading } = useMe();
+  const ownerName = me?.name ?? "";
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false); // form submit
@@ -31,19 +36,11 @@ export default function OwnerDashboard() {
   const [todayTotals, setTodayTotals] = useState<Record<number, number>>({});
 
   useEffect(() => {
-    const saved = getName();
-    if (saved) {
-      setOwnerName(saved);
-      setNameInput(saved);
-    }
-  }, []);
-
-  useEffect(() => {
     if (!ownerName || turfs.length === 0) return;
     let cancelled = false;
     Promise.all(
       turfs.map((t) =>
-        fetch(`/api/turfs/${t.id}/revenue?acting_as=${encodeURIComponent(ownerName)}`)
+        fetch(`/api/turfs/${t.id}/revenue`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => [t.id, d?.today?.total ?? 0] as const)
           .catch(() => [t.id, 0] as const)
@@ -58,7 +55,7 @@ export default function OwnerDashboard() {
 
   useEffect(() => {
     if (!ownerName) return;
-    fetch(`/api/turfs?owner_name=${encodeURIComponent(ownerName)}`)
+    fetch(`/api/turfs?mine=1`)
       .then((r) => r.json())
       .then((data) => {
         setTurfs(data);
@@ -67,13 +64,6 @@ export default function OwnerDashboard() {
         setTurfsLoading(false);
       });
   }, [ownerName]);
-
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!nameInput.trim()) return;
-    sessionSignIn(nameInput.trim());
-    setOwnerName(nameInput.trim());
-  }
 
   function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
@@ -110,7 +100,6 @@ export default function OwnerDashboard() {
 
     const payload = {
       name: form.get("name"),
-      owner_name: ownerName,
       locality: form.get("locality"),
       sport: form.get("sport"),
       price_per_hour: Number(form.get("price")),
@@ -135,32 +124,15 @@ export default function OwnerDashboard() {
     setLoading(false);
   }
 
-  if (!ownerName) {
+  // Reaching here without an owner session means proxy.ts is mid-redirect, so
+  // this is a brief wait rather than a screen anyone lands on.
+  if (meLoading || !ownerName) {
     return (
-      <div className="max-w-md mx-auto px-4 sm:px-6 py-16">
-        <h1 className="font-display text-2xl font-bold mb-2" style={{ color: "var(--pitch)" }}>
-          Owner sign in
-        </h1>
-        <p className="text-sm mb-6" style={{ color: "var(--ink-soft)" }}>
-          Just type your name. No password needed.
-        </p>
-        <form onSubmit={handleLogin} className="flex flex-col gap-3">
-          <input
-            className="tap-target border rounded-lg px-4 py-3.5 text-base"
-            style={{ borderColor: "var(--line)" }}
-            placeholder="Your name (e.g. Ramesh Patil)"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="tap-target rounded-lg px-4 py-3.5 text-base font-semibold text-white"
-            style={{ background: "var(--pitch)" }}
-          >
-            Continue
-          </button>
-        </form>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8" aria-busy="true" aria-label="Loading your turfs">
+        <div className="skeleton h-8 w-48" />
+        <div className="skeleton h-4 w-32 mt-3" />
+        <div className="skeleton h-28 w-full mt-8" />
+        <div className="skeleton h-28 w-full mt-4" />
       </div>
     );
   }
@@ -173,7 +145,7 @@ export default function OwnerDashboard() {
           <h1 className="font-display text-2xl font-bold" style={{ color: "var(--pitch)" }}>{ownerName}</h1>
           <button
             type="button"
-            onClick={() => { sessionSignOut(); setOwnerName(""); setNameInput(""); }}
+            onClick={async () => { await sessionSignOut(); router.push("/login"); }}
             className="tap-target text-base font-semibold underline -ml-1 px-1"
             style={{ color: "var(--danger)" }}
           >

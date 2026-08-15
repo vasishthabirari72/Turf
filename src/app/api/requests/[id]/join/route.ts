@@ -1,26 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { includesName, normalizeName } from '@/lib/names';
+import { requireUser } from '@/lib/auth';
+import { includesName } from '@/lib/names';
 
 // Joining is request-then-approve: the player lands in pending_joiners and only
 // moves to players_joined once the request's creator approves via /respond.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// No body is read: the only thing it used to carry was the joiner's name, and
+// that now comes from the session.
+export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  // Reject unparseable/non-object bodies as 400 rather than crashing to a 500.
-  let body;
-  try {
-    body = await req.json();
-    if (body === null || typeof body !== 'object') throw new Error('body is not an object');
-  } catch {
-    return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
-  }
-
-  const { player_name } = body;
-
-  if (typeof player_name !== 'string' || !normalizeName(player_name)) {
-    return NextResponse.json({ error: 'player_name is required' }, { status: 400 });
-  }
+  // You can only ask to join as yourself. player_name used to come from the
+  // body, so anyone could put anyone else's name into a game's pending list.
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
+  const player_name = auth.user.name;
 
   const requestId = Number(id);
   if (!Number.isInteger(requestId)) {

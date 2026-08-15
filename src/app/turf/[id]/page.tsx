@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import { useMe } from "@/lib/useSession";
 
 interface Slot {
   time: string;
@@ -68,7 +69,9 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
   const [dayOffset, setDayOffset] = useState(0);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  // The booking is made as the signed-in account; there is no name field.
+  const { me } = useMe();
+  const name = me?.name ?? "";
   const [confirmed, setConfirmed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Step 2 of the booking flow — the mock payment sheet.
@@ -91,8 +94,6 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
 
   useEffect(() => {
     fetch(`/api/turfs/${id}`).then((r) => r.json()).then(setTurf);
-    const saved = localStorage.getItem("player_name");
-    if (saved) setName(saved);
   }, [id]);
 
   useEffect(() => {
@@ -104,8 +105,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
 
   // Step 1 → 2. Nothing is charged or reserved here; it only opens the sheet.
   function handleContinueToPayment() {
-    if (!selected || !name.trim()) return;
-    localStorage.setItem("player_name", name.trim());
+    if (!selected || !name) return;
     setError(null);
     setCardError(null);
     setPayOpen(true);
@@ -145,7 +145,6 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
         turf_id: id,
         date,
         start_time: selected,
-        customer_name: name.trim(),
         payment_method: method,
       }),
     });
@@ -296,23 +295,30 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
           <div className="text-sm font-medium mb-2">
             Booking <strong>{turf.name}</strong> on {date} at <strong>{selected}</strong> — ₹{selectedPrice}
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              className="tap-target flex-1 min-w-40 border rounded-lg px-3 py-3 text-base"
-              style={{ borderColor: "var(--line)" }}
-            />
-            <button
-              onClick={handleContinueToPayment}
-              disabled={!name.trim()}
-              className="tap-target px-5 py-2.5 rounded-lg font-semibold text-white disabled:opacity-60"
+          {/* Booked under the signed-in account, so there is no name to type
+              and no way to book in someone else's name. */}
+          {name ? (
+            <div className="flex gap-2 flex-wrap items-center">
+              <span className="flex-1 min-w-40 text-base rounded-lg px-3 py-3" style={{ background: "var(--paper)", border: "1px solid var(--line)" }}>
+                Booking as <strong>{name}</strong>
+              </span>
+              <button
+                onClick={handleContinueToPayment}
+                className="tap-target px-5 py-2.5 rounded-lg font-semibold text-white"
+                style={{ background: "var(--turf)" }}
+              >
+                Continue to payment
+              </button>
+            </div>
+          ) : (
+            <Link
+              href={`/login?next=/turf/${id}`}
+              className="tap-target inline-block px-5 py-3 rounded-lg font-semibold text-white"
               style={{ background: "var(--turf)" }}
             >
-              Continue to payment
-            </button>
-          </div>
+              Sign in to book
+            </Link>
+          )}
         </div>
       )}
 

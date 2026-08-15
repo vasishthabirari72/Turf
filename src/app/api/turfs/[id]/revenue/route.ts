@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { normalizeName, sameName } from '@/lib/names';
+import { requireTurfOwner } from '@/lib/auth';
 
 // What the owner actually took, from both halves of the business: bookings made
 // through the app and phone/walk-in bookings they blocked by hand. This is the
@@ -32,27 +32,25 @@ function emptyDay(date: string) {
   };
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const actingAs = new URL(req.url).searchParams.get('acting_as') || '';
 
   const turfId = Number(id);
   if (!Number.isInteger(turfId)) {
     return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
   }
-  if (!normalizeName(actingAs)) {
-    return NextResponse.json({ error: 'acting_as is required' }, { status: 400 });
-  }
+
+  // Only the turf's owner sees its takings, proven by the session rather than
+  // by an acting_as query parameter — that parameter was a URL anyone could
+  // type, which for the most sensitive figures in the app was the weakest
+  // possible check.
+  const auth = await requireTurfOwner(turfId);
+  if ('error' in auth) return auth.error;
 
   const turfRows = await sql<{ owner_name: string; name: string }[]>`
     SELECT owner_name, name FROM turfs WHERE id = ${turfId}
   `;
   if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
-
-  // Same check as everywhere else: only the turf's owner sees its numbers.
-  if (!sameName(turfRows[0].owner_name, actingAs)) {
-    return NextResponse.json({ error: "Only this turf's owner can see its collection" }, { status: 403 });
-  }
 
   // UTC, matching how every date in this app is produced and compared.
   const todayStr = new Date().toISOString().split('T')[0];

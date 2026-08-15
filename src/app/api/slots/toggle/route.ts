@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql, { isUniqueConstraintError } from '@/lib/db';
-import { normalizeName, sameName } from '@/lib/names';
+import { requireTurfOwner } from '@/lib/auth';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
 
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { turf_id, date, start_time, action, note, acting_as, amount } = body;
+  const { turf_id, date, start_time, action, note, amount } = body;
 
   // What the owner collected in cash for this slot, so a phone or walk-in
   // booking lands in the same ledger as an app booking. Optional on purpose:
@@ -35,22 +35,13 @@ export async function POST(req: NextRequest) {
   if (!turf_id || !date || !start_time || !action) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
-  if (typeof acting_as !== 'string' || !normalizeName(acting_as)) {
-    return NextResponse.json({ error: 'acting_as is required' }, { status: 400 });
-  }
-
-  // Only the turf's owner may block or release its slots. Same fidelity as the
-  // rest of the app's identity model — a self-declared name, not an
-  // authenticated one — but it stops one owner touching another's calendar.
-  // Checked before the slot lookup so a non-owner can't probe slot state.
-  const turfRows = await sql<{ owner_name: string }[]>`
-    SELECT owner_name FROM turfs WHERE id = ${turf_id}
-  `;
-
-  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
-  if (!sameName(turfRows[0].owner_name, acting_as)) {
-    return NextResponse.json({ error: "Only this turf's owner can change its slots" }, { status: 403 });
-  }
+  // Only this turf's owner may block or release its slots, established from the
+  // session cookie. This used to be an `acting_as` name in the request body,
+  // which anyone could set to the owner's name; now the caller has to actually
+  // hold a session for that account. Checked before the slot lookup so a
+  // non-owner cannot probe slot state.
+  const auth = await requireTurfOwner(Number(turf_id));
+  if ('error' in auth) return auth.error;
 
   const existingRows = await sql<{ id: number; status: string }[]>`
     SELECT id, status FROM slot_overrides

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { normalizeName, sameName } from '@/lib/names';
+import { requireUser } from '@/lib/auth';
+import { sameName } from '@/lib/names';
 
 // The creator approves or rejects someone sitting in pending_joiners.
 // Approve moves them into players_joined; reject just drops them.
@@ -16,10 +17,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { player_name, action, acting_as } = body;
+  // Approving or declining is the creator's call, and who the creator is comes
+  // from the session. acting_as was a body field the caller filled in, so
+  // anyone could approve joiners to a game they had nothing to do with.
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
+  const acting_as = auth.user.name;
 
-  if (!player_name || !action || typeof acting_as !== 'string' || !normalizeName(acting_as)) {
-    return NextResponse.json({ error: 'player_name, action and acting_as are required' }, { status: 400 });
+  const { player_name, action } = body;
+
+  if (!player_name || !action) {
+    return NextResponse.json({ error: 'player_name and action are required' }, { status: 400 });
   }
   if (action !== 'approve' && action !== 'reject') {
     return NextResponse.json({ error: "action must be 'approve' or 'reject'" }, { status: 400 });

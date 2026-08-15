@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { requireOwner } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // !! KNOWN BROKEN ON VERCEL — READ THIS BEFORE DEPLOYING !!
@@ -41,6 +42,11 @@ const ALLOWED: Record<string, string> = {
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'turf-photos');
 
 export async function POST(req: NextRequest) {
+  // Uploading a turf photo is an owner action, and an unauthenticated write
+  // endpoint that puts files on disk is worth closing regardless.
+  const auth = await requireOwner();
+  if ('error' in auth) return auth.error;
+
   let form: FormData;
   try {
     form = await req.formData();

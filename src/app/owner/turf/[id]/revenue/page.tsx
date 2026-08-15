@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState, use } from "react";
 import Link from "next/link";
-import { getName } from "@/lib/session";
 
 interface Bucket {
   total: number;
@@ -40,8 +39,9 @@ export default function Collection({ params }: { params: Promise<{ id: string }>
   const [state, setState] = useState<"loading" | "ok" | "denied" | "error">("loading");
 
   const load = useCallback(() => {
-    const who = getName();
-    fetch(`/api/turfs/${id}/revenue?acting_as=${encodeURIComponent(who)}`)
+    // No acting_as: the server reads the session and answers for that owner
+    // only, so a 403 here means the account genuinely does not own this turf.
+    fetch(`/api/turfs/${id}/revenue`)
       .then(async (r) => {
         if (r.status === 403 || r.status === 400) return { denied: true as const };
         if (!r.ok) throw new Error(String(r.status));

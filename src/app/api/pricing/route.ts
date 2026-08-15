@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
-import { normalizeName, sameName } from '@/lib/names';
+import { requireTurfOwner } from '@/lib/auth';
 import { isValidTime, timeToMinutes } from '@/lib/pricing';
 
 // Peak/off-peak rules for a turf. Reading is public — consumers need prices to
@@ -34,13 +34,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { turf_id, start_time, end_time, price, acting_as } = body;
+  const { turf_id, start_time, end_time, price } = body;
 
   if (!turf_id || !start_time || !end_time || price === undefined) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-  }
-  if (typeof acting_as !== 'string' || !normalizeName(acting_as)) {
-    return NextResponse.json({ error: 'acting_as is required' }, { status: 400 });
   }
   if (!isValidTime(start_time) || !isValidTime(end_time)) {
     return NextResponse.json({ error: 'Times must look like 18:00' }, { status: 400 });
@@ -55,13 +52,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Price must be a whole number above zero' }, { status: 400 });
   }
 
-  const turfRows = await sql<{ owner_name: string }[]>`
-    SELECT owner_name FROM turfs WHERE id = ${turf_id}
-  `;
-  if (turfRows.length === 0) return NextResponse.json({ error: 'Turf not found' }, { status: 404 });
-  if (!sameName(turfRows[0].owner_name, acting_as)) {
-    return NextResponse.json({ error: "Only this turf's owner can change its prices" }, { status: 403 });
-  }
+  // Prices decide what every customer is charged, so only the turf's own owner
+  // may set them -- established from the session, not from a name in the body.
+  const auth = await requireTurfOwner(Number(turf_id));
+  if ('error' in auth) return auth.error;
 
   const inserted = await sql`
     INSERT INTO pricing_rules (turf_id, start_time, end_time, price)

@@ -50,15 +50,56 @@ running DDL on every cold start and trying to reseed live data on every deploy.
   at the top of `src/app/turf/[id]/page.tsx`: a real integration must move slot creation
   server-side behind a verified payment webhook, because a client-side success callback
   can't be trusted.
-- OTP/SMS login — just a name field. Identity is a self-declared name held in
-  `localStorage`, so ownership and approval checks (`acting_as`) stop honest mistakes and
-  casual API pokes, but not deliberate spoofing by someone who types the right name.
+- OTP/SMS verification — see "How sign-in works" below. There are real passwords now, but
+  no phone or email verification, so an account proves someone knows a password and
+  nothing more about who they are.
 - Real maps/geolocation — locality is a dropdown, not GPS
 - Push notifications
 - Mobile app — this is a responsive website, works fine on a phone browser for demo purposes
 
 These get added once you've validated real demand with owners (see the roadmap docs for
 what production would add).
+
+## How sign-in works, and what it does not cover
+
+Accounts are a **name and a password**. Passwords are hashed with bcrypt (cost 12) and the
+raw password is never stored, logged, or returned. The session lives in an **httpOnly,
+encrypted cookie** (iron-session), so page scripts cannot read it — `document.cookie` shows
+nothing. Signing out destroys it server-side.
+
+An account is either a **player** or an **owner**, fixed at signup. Owner-only actions —
+listing a turf, blocking or releasing a slot, setting prices, viewing takings, uploading a
+photo — are checked **on the server, in the route handler**, against the session. Booking a
+turf and joining a game only require being signed in; both roles can do them.
+
+This replaced an `acting_as` name in the request body. That was never a real check: it was
+a string the caller chose, so anyone could send an owner's name and be treated as them.
+`src/proxy.ts` also bounces non-owners away from `/owner/*`, but that is only so they land
+somewhere sensible — **delete it and nothing becomes permitted**, because the enforcement
+is in `src/lib/auth.ts` next to the data.
+
+**What this is still missing, honestly:**
+
+- **No account recovery.** Names are the login identifier and there is no email or phone on
+  an account, so there is nowhere to send a reset link. A forgotten password means a new
+  account under a new name. This is the main reason to add email next.
+- **No OTP or phone/email verification.** Nothing confirms a person is who they say.
+- **No rate limiting** on signup or login, so passwords can be guessed at machine speed.
+- **No CSRF tokens.** The session cookie is `SameSite=Lax`, which stops the ordinary
+  cross-site form post, but that is a mitigation rather than a proper defence.
+- **Roles cannot be changed in the app.** Making someone an owner is a database update,
+  deliberately — a self-service switch would let any account grant itself the owner tools.
+
+That set is a reasonable place to stop for a validation-phase app with a handful of real
+users who know each other. It is **not** a finished production auth system, and it should
+not be described as one to anybody.
+
+`SESSION_PASSWORD` (32+ characters) must be set alongside `DATABASE_URL`; the app refuses to
+start without it rather than falling back to a default anyone could guess. Changing it signs
+everyone out.
+
+Demo accounts created by `npm run seed` use the password `demo-turf-2026` — sample data in a
+sample database, not a secret.
 
 ## Deploying to Vercel
 

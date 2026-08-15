@@ -7,6 +7,7 @@
 // Against a shared hosted database that would be wrong: every deploy, and in
 // serverless every cold start, would try to reseed live data.
 import postgres from 'postgres';
+import bcrypt from 'bcryptjs';
 import { migrate, onnotice } from '../src/lib/schema.ts';
 
 const connectionString = process.env.DATABASE_URL;
@@ -60,6 +61,31 @@ try {
     ["Striker's Box Cricket", 'Anil Kumar', 'Jogeshwari', 'Cricket', 700, '07:00', '22:30', '🏏', 4.1, null],
   ] as const;
 
+  // Every seeded turf needs a real account behind it, or its calendar and
+  // takings are unreachable: ownership is now decided by the signed-in account
+  // matching turfs.owner_name, and there is no way to sign in without a
+  // password. The demo password is intentionally not a secret — these are
+  // sample accounts in a sample database.
+  //
+  // Seeding the accounts also takes the names, so nobody can register as
+  // "Ramesh Patil" and inherit his turf.
+  const DEMO_PASSWORD = 'demo-turf-2026';
+  const demoHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+  const owners = [...new Set(turfs.map((t) => t[1]))];
+  for (const owner of owners) {
+    await sql`
+      INSERT INTO users (name, role, password_hash)
+      VALUES (${owner}, 'owner', ${demoHash})
+      ON CONFLICT (name) DO UPDATE SET role = 'owner', password_hash = ${demoHash}
+    `;
+  }
+  // One sample player, so the non-owner side of the demo has an account too.
+  await sql`
+    INSERT INTO users (name, role, password_hash)
+    VALUES ('Aditya K.', 'player', ${demoHash})
+    ON CONFLICT (name) DO UPDATE SET role = 'player', password_hash = ${demoHash}
+  `;
+
   const turfIds: number[] = [];
   for (const t of turfs) {
     const [row] = await sql<{ id: number }[]>`
@@ -101,6 +127,9 @@ try {
 
   console.log(
     `Seeded ${turfs.length} turfs, ${overrides.length} slot overrides and ${requests.length} player requests.`
+  );
+  console.log(
+    `Demo accounts (password "${DEMO_PASSWORD}"): ${owners.join(', ')} as owners, Aditya K. as a player.`
   );
 } catch (err) {
   console.error('Seed failed:', err instanceof Error ? err.message : err);

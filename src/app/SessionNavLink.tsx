@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getName, onSessionChange } from "@/lib/session";
+import { useMe } from "@/lib/useSession";
 
 /**
  * The identity slot in the nav. Deliberately the same width whether signed in
@@ -11,17 +10,13 @@ import { getName, onSessionChange } from "@/lib/session";
  * length.
  */
 export default function SessionNavLink() {
-  // Server render and first client render must match, so start neutral and
-  // correct after mount.
-  const [name, setName] = useState<string | null>(null);
+  // Asked of the server: the session cookie is httpOnly, so the browser cannot
+  // read it directly. Until the answer arrives this renders the signed-out
+  // state, which matches the server render.
+  const { me } = useMe();
 
-  useEffect(() => {
-    const sync = () => setName(getName());
-    Promise.resolve().then(sync);
-    return onSessionChange(sync);
-  }, []);
-
-  const signedIn = !!name;
+  const name = me?.name ?? null;
+  const signedIn = !!me;
   const href = signedIn ? "/profile" : "/login";
   const label = signedIn ? "Profile" : "Sign in";
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql, { isUniqueConstraintError } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import { priceForSlot, type PricingRule } from '@/lib/pricing';
 
 const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
@@ -21,9 +22,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { turf_id, date, start_time, customer_name, payment_method } = body;
+  // Booking is open to any signed-in account, player or owner alike -- it is
+  // not an owner action. The booking is recorded under the session's name, so
+  // nobody can put a slot in someone else's name.
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
+  const customer_name = auth.user.name;
 
-  if (!turf_id || !date || !start_time || !customer_name) {
+  const { turf_id, date, start_time, payment_method } = body;
+
+  if (!turf_id || !date || !start_time) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 

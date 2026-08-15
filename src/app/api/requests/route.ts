@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -32,9 +33,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 
-  const { creator_name, sport, locality, date, time, players_needed } = body;
+  // Any signed-in account can post a game; the poster is the session, so a
+  // game cannot be created in someone else's name.
+  const auth = await requireUser();
+  if ('error' in auth) return auth.error;
+  const creator_name = auth.user.name;
 
-  if (!creator_name || !sport || !locality || !date || !time || !players_needed) {
+  const { sport, locality, date, time, players_needed } = body;
+
+  if (!sport || !locality || !date || !time || !players_needed) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
