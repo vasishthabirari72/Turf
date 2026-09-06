@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import { useMe } from "@/lib/useSession";
+import { loadRazorpay, RAZORPAY_SCRIPT_SRC, type RazorpaySuccess } from "@/lib/razorpay-checkout";
 
 interface Slot {
   time: string;
@@ -22,27 +24,46 @@ interface Turf {
 }
 
 // ---------------------------------------------------------------------------
-// MOCK PAYMENT — there is no gateway here and no payment provider is contacted.
-// The card fields are cosmetic: nothing is validated, stored, or transmitted,
-// and the "Pay" button just waits on a setTimeout before calling our own
-// /api/bookings. The booking API remains the only source of truth for whether
-// a slot was taken.
+// PAYMENTS — real, when configured.
 //
-// TODO: integrate a real gateway (Razorpay/Stripe) before taking real money.
-// That work replaces `handlePay`'s setTimeout with a real order + checkout
-// round-trip, and must move slot creation server-side behind a verified
-// payment webhook — a client-side success callback must never be trusted.
+// "Pay online" opens Razorpay Standard Checkout against an order created by
+// /api/payments/create-order, and the booking is written by
+// /api/payments/verify only after the signature is recomputed server-side. The
+// success callback below is treated as a claim, never as proof.
+//
+// The card/UPI fields further down are the ORIGINAL MOCK and are still here on
+// purpose: without RAZORPAY_KEY_ID/SECRET set, the app falls back to them so a
+// fresh clone demos end to end with no Razorpay account. They contact no
+// gateway and validate nothing.
+//
+// Still missing for production: Razorpay's `payment.captured` webhook. If the
+// browser dies between the money leaving and /api/payments/verify landing, the
+// payment exists and the booking does not. See the README.
 // ---------------------------------------------------------------------------
 
-type PayMethod = "card" | "upi" | "cod";
+type PayMethod = "razorpay" | "card" | "upi" | "cod";
+
+// Whether real payments are switched on is decided by the server having a key
+// secret, which the browser cannot see. The public key id is the honest proxy:
+// it is set by the same config step, and Checkout cannot open without it.
+const RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+const PAYMENTS_LIVE = Boolean(RAZORPAY_KEY_ID);
 
 // "cod" is pay-at-the-turf in cash — the way most turf bookings are settled
 // today, so it belongs alongside the online options rather than under them.
-const PAY_METHODS: { key: PayMethod; label: string; icon: string }[] = [
-  { key: "card", label: "Card", icon: "💳" },
-  { key: "upi", label: "UPI", icon: "📱" },
-  { key: "cod", label: "Pay at turf", icon: "💵" },
-];
+// The mock card/UPI tiles appear only when Razorpay is not configured; showing
+// a real gateway and a fake card form side by side would invite paying into the
+// one that takes no money.
+const PAY_METHODS: { key: PayMethod; label: string; icon: string }[] = PAYMENTS_LIVE
+  ? [
+      { key: "razorpay", label: "Pay online", icon: "💳" },
+      { key: "cod", label: "Pay at turf", icon: "💵" },
+    ]
+  : [
+      { key: "card", label: "Card", icon: "💳" },
+      { key: "upi", label: "UPI", icon: "📱" },
+      { key: "cod", label: "Pay at turf", icon: "💵" },
+    ];
 
 // Cosmetic only — groups digits so the field reads like a card number.
 function formatCardNumber(value: string) {
@@ -77,7 +98,7 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
   // Step 2 of the booking flow — the mock payment sheet.
   const [payOpen, setPayOpen] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [method, setMethod] = useState<PayMethod>("card");
+  const [method, setMethod] = useState<PayMethod>(PAYMENTS_LIVE ? "razorpay" : "card");
   const [card, setCard] = useState("");
   const [expiry, setExpiry] = useState("");
   const [cvv, setCvv] = useState("");
@@ -111,11 +132,115 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
     setPayOpen(true);
   }
 
+  // ---- real payment ------------------------------------------------------
+  // Order -> Checkout -> verify. The slot is created by the verify endpoint,
+  // so nothing here can book without a payment the server has confirmed.
+  async function payWithRazorpay() {
+    setCardError(null);
+    setPaying(true);
+    setError(null);
+
+    try {
+      // The amount is NOT sent: the server prices the slot itself. This request
+      // says which slot, never how much.
+      const orderRes = await fetch("/api/payments/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turf_id: id, date, start_time: selected }),
+      });
+      const order = await orderRes.json();
+
+      if (!orderRes.ok) {
+        setPaying(false);
+        setPayOpen(false);
+        setError(order.error || "Could not start the payment. Please try again.");
+        loadSlots();
+        return;
+      }
+
+      const Razorpay = await loadRazorpay();
+
+      const rzp = new Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        order_id: order.order_id,
+        name: order.turf_name,
+        description: `${date} at ${selected} · 1 hour`,
+        prefill: { name },
+        theme: { color: "#2F6B3A" },
+        // Razorpay calls this after a successful payment. It is a claim, not
+        // proof — the server recomputes the signature before booking anything.
+        handler: async (response: RazorpaySuccess) => {
+          try {
+            const verifyRes = await fetch("/api/payments/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                turf_id: id,
+                date,
+                start_time: selected,
+              }),
+            });
+            const data = await verifyRes.json();
+            setPaying(false);
+            setPayOpen(false);
+
+            if (!verifyRes.ok) {
+              // Money may well have left the account here, so never say
+              // "payment failed" — the server's message covers the refund.
+              setError(data.error || "We could not confirm your payment. Please contact us.");
+              loadSlots();
+              return;
+            }
+
+            setConfirmed(selected);
+            setSelected(null);
+            loadSlots();
+          } catch {
+            setPaying(false);
+            setPayOpen(false);
+            setError(
+              "Your payment went through but we could not record the booking. Please contact us before paying again."
+            );
+            loadSlots();
+          }
+        },
+        modal: {
+          // The user closed Checkout without paying. Not an error — put them
+          // back on the slot they had chosen, ready to try again.
+          ondismiss: () => {
+            setPaying(false);
+            setCardError("Payment cancelled. Your slot is not booked yet.");
+          },
+        },
+      });
+
+      rzp.on("payment.failed", (payload) => {
+        setPaying(false);
+        setCardError(payload?.error?.description || "That payment did not go through. Please try again.");
+      });
+
+      rzp.open();
+    } catch (err) {
+      setPaying(false);
+      setCardError(err instanceof Error ? err.message : "Could not open the payment window.");
+    }
+  }
+
   // Step 2. The delay below is a stand-in for a gateway round-trip so the demo
   // feels real — see the MOCK PAYMENT note at the top of this file. The actual
   // booking is still decided by /api/bookings, not by anything on this screen.
   async function handlePay() {
     if (!selected || !name.trim()) return;
+
+    if (method === "razorpay") {
+      await payWithRazorpay();
+      return;
+    }
 
     // Presence checks only — nothing here validates a real card or UPI handle
     // (see MOCK PAYMENT above). Cash at the turf has nothing to collect.
@@ -202,6 +327,11 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+      {/* lazyOnload: Checkout is only needed once someone reaches the payment
+          sheet, so it must not compete with the slot grid for bandwidth.
+          loadRazorpay() waits for window.Razorpay, covering a tap that beats
+          the script. */}
+      {PAYMENTS_LIVE && <Script src={RAZORPAY_SCRIPT_SRC} strategy="lazyOnload" />}
       <Link href="/search" className="text-sm font-medium" style={{ color: "var(--turf-dark)" }}>← Back to search</Link>
 
       {/* Hero photo when the owner uploaded one. Without it the emoji beside the
@@ -391,6 +521,14 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
               })}
             </div>
 
+            {method === "razorpay" && (
+              <div className="mb-5 rounded-lg p-4 text-sm leading-relaxed" style={{ background: "var(--chalk)", border: "1px solid var(--line)", color: "var(--ink)" }}>
+                <strong>Card, UPI, netbanking or a wallet.</strong> Tapping Pay opens
+                Razorpay&rsquo;s secure window — card details are entered there and never
+                touch this site. Your slot is booked the moment the payment is confirmed.
+              </div>
+            )}
+
             {method === "card" && (
               <>
                 <label className="text-sm font-semibold block mb-1.5" htmlFor="card-number">Card number</label>
@@ -490,7 +628,11 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
                     className="inline-block w-4 h-4 rounded-full animate-spin"
                     style={{ border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white" }}
                   />
-                  {method === "cod" ? "Booking…" : "Processing…"}
+                  {method === "cod"
+                    ? "Booking…"
+                    : method === "razorpay"
+                    ? "Opening payment…"
+                    : "Processing…"}
                 </>
               ) : method === "cod" ? (
                 "Confirm booking"
@@ -499,8 +641,12 @@ export default function TurfDetail({ params }: { params: Promise<{ id: string }>
               )}
             </button>
 
+            {/* Never let this line claim more safety than is true: with a live
+                key the payment is real, and only test keys move no money. */}
             <div className="text-xs text-center mt-3" style={{ color: "var(--ink-soft)" }}>
-              Demo only — no real payment is taken, and no card or UPI details are stored.
+              {method === "razorpay"
+                ? "Payments are processed by Razorpay. Card details never reach this site."
+                : "Demo only — no real payment is taken, and no card or UPI details are stored."}
             </div>
           </div>
         </div>

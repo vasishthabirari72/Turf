@@ -8,6 +8,10 @@ const SLOT_TAKEN = 'This slot was just taken. Please pick another time.';
 // 'cod' is pay-in-cash-at-the-turf. Kept in sync with PAY_METHODS in
 // src/app/turf/[id]/page.tsx — the owner calendar reads this value back to
 // decide which bookings still need money collected in person.
+//
+// 'razorpay' is deliberately NOT here. A booking paid through the gateway is
+// created by /api/payments/verify once the signature checks out; accepting it
+// on this route would let anyone label an unpaid booking as paid.
 const PAYMENT_METHODS = ['card', 'upi', 'cod'];
 
 export async function POST(req: NextRequest) {

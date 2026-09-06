@@ -137,6 +137,21 @@ export async function migrate(sql: Sql): Promise<void> {
   await addColumnIfMissing('slot_overrides', 'price', 'INTEGER');
   await addColumnIfMissing('turfs', 'photo_url', 'TEXT');
 
+  // ---- payments ----------------------------------------------------------
+  // Razorpay's ids for a booking that was paid online. Null for cash-at-turf,
+  // for the mock checkout, and for every booking made before payments existed,
+  // so 'has a payment_id' is exactly 'was paid through the gateway'.
+  await addColumnIfMissing('slot_overrides', 'payment_id', 'TEXT');
+  await addColumnIfMissing('slot_overrides', 'order_id', 'TEXT');
+
+  // One payment can buy one slot. This is what makes the verify endpoint safe
+  // to call twice: a replayed success callback hits this index instead of
+  // creating a second booking, and the route returns the original.
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_payment
+      ON slot_overrides(payment_id) WHERE payment_id IS NOT NULL
+  `;
+
   // ---- accounts migration ------------------------------------------------
   // Rows that predate passwords get an empty hash. That is not a weak password,
   // it is an unusable one: '' is not a valid bcrypt digest, and the login route

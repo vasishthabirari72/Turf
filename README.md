@@ -12,9 +12,9 @@ Postgres, so it deploys to Vercel.
   A "Just got a call" shortcut jumps straight to today's grid, so blocking a slot mid-call
   is two taps from opening the app.
 - **Consumer side**: search turfs by locality and sport, see live slot availability, and
-  book through a two-step checkout — pick a slot, then a payment sheet with amount, card
-  fields, and a "Pay ₹X" button. The payment is entirely mocked: no gateway, no card
-  validation, no money moves.
+  book through a two-step checkout — pick a slot, then pay. With Razorpay keys set the
+  payment is real (card/UPI/netbanking through Razorpay Checkout); without them the app
+  falls back to a mocked card sheet so the demo still runs. See "Payments" below.
 - **Find Players**: post a request for players, browse open requests near you, and ask to
   join one. Joining is request-then-approve — you show as "Requested" until the person who
   posted the game approves you, and they get Approve/Reject buttons on their own post.
@@ -46,10 +46,13 @@ running DDL on every cold start and trying to reseed live data on every deploy.
 
 ## What's intentionally NOT built (by design, for speed)
 
-- Real payments (Razorpay/UPI) — the checkout is a visual mock. See the MOCK PAYMENT note
-  at the top of `src/app/turf/[id]/page.tsx`: a real integration must move slot creation
-  server-side behind a verified payment webhook, because a client-side success callback
-  can't be trusted.
+- Payment **webhooks** — payments themselves are now real (see "Payments"), but the
+  booking is written on the browser's return trip. If the browser dies between the money
+  leaving and that call landing, the payment exists and the booking does not. Razorpay's
+  `payment.captured` webhook is what closes that gap, and is the one piece of payment work
+  still outstanding.
+- Refunds and cancellation — there is no way to cancel a booking, so the refund path for a
+  lost race (paid, but the slot went first) is manual, from the Razorpay dashboard.
 - OTP/SMS verification — see "How sign-in works" below. There are real passwords now, but
   no phone or email verification, so an account proves someone knows a password and
   nothing more about who they are.
@@ -73,6 +76,51 @@ Someone still pending sees nothing; approval is what unlocks it, in both
 directions. Anyone else is refused outright rather than handed an empty list, so
 the endpoint cannot be used to test whether a name is on a game, and no phone
 number appears anywhere on the public games listing.
+
+## Payments
+
+Real payments run through **Razorpay Standard Checkout**. Two environment variables switch
+them on:
+
+```
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_...   # the same key id, for the browser
+```
+
+Without them the checkout falls back to the old mocked card sheet, so a fresh clone with no
+Razorpay account still demos end to end. Test keys (`rzp_test_...`) move no real money;
+card `4111 1111 1111 1111`, any future expiry and any CVV always succeeds.
+
+The flow is three steps, and the middle one is the browser's only job:
+
+1. `POST /api/payments/create-order` — the server prices the slot and asks Razorpay for an
+   order.
+2. Razorpay Checkout opens in the browser and returns a payment id and a signature.
+3. `POST /api/payments/verify` — the server recomputes the signature and, only then,
+   writes the booking.
+
+**The amount is never sent by the client.** `create-order` is told *which slot*, never *how
+much*, and prices it with the same `priceForSlot` the booking route uses. A client-supplied
+amount would let anyone pay ₹1 for a ₹1200 peak slot.
+
+**A signature alone is not proof of payment.** It proves the response came from Razorpay,
+not that money was captured or that it was for this slot — so `verify` also re-fetches the
+order, requires `status === 'paid'`, and checks the order's notes match the turf, date,
+slot and user being claimed. Verification and booking are the *same request*, so there is
+no second call a client could skip.
+
+`/api/bookings` deliberately does **not** accept `payment_method: 'razorpay'`. Only the
+verify route may mark a booking as gateway-paid; otherwise anyone could label an unpaid
+booking as paid.
+
+A `payment_id` is stored per booking under a unique index, which makes verification
+idempotent: a replayed success callback returns the original booking instead of
+double-booking.
+
+**What is still missing:** the `payment.captured` webhook, refunds, and cancellation — see
+"What's intentionally NOT built" above. Do not describe this as a finished payments system
+to anybody.
 
 ## How sign-in works, and what it does not cover
 
@@ -125,7 +173,11 @@ The database is hosted Postgres, so the app runs on serverless now.
    set in `.env.local`.
 3. Import the repo into Vercel and set `DATABASE_URL` as an environment variable for
    Production, Preview and Development.
-4. Deploy.
+4. For real payments, set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and
+   `NEXT_PUBLIC_RAZORPAY_KEY_ID` too. `NEXT_PUBLIC_*` is inlined at build time, so
+   changing it needs a redeploy, not just a restart. Leave all three unset to deploy with
+   the mock checkout.
+5. Deploy.
 
 **Photo uploads need a Blob store.** `src/app/api/upload/route.ts` writes to Vercel Blob,
 so `BLOB_READ_WRITE_TOKEN` has to be set — `vercel blob create-store <name> --access public
@@ -151,9 +203,13 @@ src/app/
   owner/page.tsx            → owner: sign in + list of my turfs + add turf
   owner/turf/[id]/page.tsx  → owner: calendar + one-tap block/unblock slots
   api/                      → backend routes (turfs, slots, bookings, requests)
+  api/payments/create-order → server-priced Razorpay order
+  api/payments/verify       → signature check, then the booking is written
 src/lib/db.ts               → Postgres client (postgres.js) + unique-constraint helper
 src/lib/schema.ts           → CREATE TABLE / column migrations, run by the scripts
 src/lib/pricing.ts          → peak/off-peak rule matching, shared by API and UI
+src/lib/razorpay.ts         → gateway client + signature verification (server only)
+src/lib/razorpay-checkout.ts→ browser-side Checkout loader
 scripts/migrate.ts          → npm run migrate
 scripts/seed.ts             → npm run seed
 src/lib/names.ts            → case/whitespace-insensitive name matching, shared by
